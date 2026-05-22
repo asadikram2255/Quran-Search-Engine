@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quran Search Engine</title>
+  <meta name="description" content="Search the Quran with natural language queries. Grounded strictly in authentic Quranic datasets with Arabic root-word awareness and semantic understanding.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='28'%3E%E2%98%BE%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="container">
+      <div class="brand">
+        <span class="brand-icon">☾</span>
+        <span class="brand-name">Quran Search</span>
+      </div>
+      <button id="theme-toggle" class="theme-btn" title="Toggle dark / light mode">◑</button>
+    </div>
+  </header>
+
+  <!-- ── Search section ─────────────────────────────────────────────── -->
+  <section class="search-section" id="search-section">
+    <div class="container">
+      <div class="search-hero">
+        <p class="search-subtitle">
+          Ask anything about the Quran in natural language — powered entirely by authentic datasets
+        </p>
+
+        <div class="search-box-wrapper">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input
+              type="text"
+              id="search-input"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder='e.g. "In which term has Allah addressed believers, non-believers and humans"'
+            >
+            <button class="search-btn" id="search-btn">Search</button>
+          </div>
+        </div>
+
+        <div class="example-queries">
+          <span class="example-label">Try:</span>
+          <button class="example-chip"
+            data-query="In which term has Allah addressed believers, non-believers and humans">
+            Address terms
+          </button>
+          <button class="example-chip"
+            data-query="Ayaat about mercy and forgiveness of Allah">
+            Mercy &amp; Forgiveness
+          </button>
+          <button class="example-chip"
+            data-query="Commands about prayer and worship">
+            Prayer commands
+          </button>
+          <button class="example-chip"
+            data-query="Stories of prophets mentioned in the Quran">
+            Prophets&#39; stories
+          </button>
+          <button class="example-chip"
+            data-query="What does the Quran say about the Day of Judgment">
+            Day of Judgment
+          </button>
+          <button class="example-chip"
+            data-query="Ayaat addressing children of Adam">
+            O children of Adam
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Filter bar ──────────────────────────────────────────────────── -->
+  <div class="filter-bar" id="filter-bar" hidden>
+    <div class="container">
+      <div class="filters">
+        <select id="filter-place" class="filter-select" title="Filter by place of revelation">
+          <option value="">All Revelations</option>
+          <option value="Meccan">Meccan</option>
+          <option value="Medinan">Medinan</option>
+        </select>
+
+        <select id="filter-surah" class="filter-select" title="Filter by surah">
+          <option value="">All Surahs</option>
+          <!-- populated by JS -->
+        </select>
+
+        <select id="filter-juz" class="filter-select" title="Filter by juz">
+          <option value="">All Juz</option>
+          <!-- populated by JS -->
+        </select>
+
+        <button id="clear-filters" class="clear-filters-btn">Clear filters</button>
+        <span id="results-count" class="results-count"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Loading state ───────────────────────────────────────────────── -->
+  <div class="loading-state" id="loading-state">
+    <div class="loading-spinner"></div>
+    <p id="loading-text">Loading Quran data…</p>
+  </div>
+
+  <!-- ── Results ─────────────────────────────────────────────────────── -->
+  <main class="results-section" id="results-section" hidden>
+    <div class="container">
+
+      <!-- Concept summary banner -->
+      <div class="concept-banner" id="concept-banner" hidden></div>
+
+      <!-- Result cards -->
+      <div class="results-grid" id="results-grid"></div>
+
+      <!-- Load more -->
+      <div class="load-more-wrapper" id="load-more-wrapper" hidden>
+        <button class="load-more-btn" id="load-more-btn">Load more results</button>
+      </div>
+
+      <!-- No results -->
+      <div class="no-results" id="no-results" hidden>
+        <p>No ayaat matched your query.</p>
+        <p class="no-results-hint">
+          Try rephrasing — e.g. use "believers" instead of "mumins", or "Day of Judgment" instead of "yawm al-qiyama".
+        </p>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <p>
+        All results are strictly grounded in authentic Quranic datasets.
+        Arabic root-word aware · Three English translations per ayah.
+      </p>
+      <p>
+        <a href="https://github.com/asadikram2255/Quran-Search-Engine" target="_blank" rel="noopener">
+          View on GitHub
+        </a>
+      </p>
+    </div>
+  </footer>
+
+  <script src="js/concepts.js"></script>
+  <script src="js/search.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

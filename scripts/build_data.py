@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""
+Quran Search Engine - Data Preprocessing Script
+Run: pip install -r requirements.txt && python scripts/build_data.py
+Outputs JSON files to /data/ for the browser-based search engine.
+"""
+
+import pandas as pd
+import json
+import os
+import sys
+from collections import defaultdict
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATASET_DIR = os.path.join(ROOT, "Datasets")
+OUTPUT_DIR = os.path.join(ROOT, "data")
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+def log(msg): print(f"  {msg}".encode('ascii', 'replace').decode('ascii'))
+def section(msg): print(f"\n=== {msg} ===".encode('ascii', 'replace').decode('ascii'))
+def clean(val):
+    if val is None or (isinstance(val, float) and str(val) == 'nan'):
+        return ''
+    s = str(val).strip()
+    return '' if s in ('nan', 'NA', 'N/A', 'None') else s
+
+
+# ─────────────────────────────────────────────────────────
+# 1. Load datasets
+# ─────────────────────────────────────────────────────────
+section("Loading datasets")
+
+# Primary: Quran Detailed (full metadata)
+log("10. Quran Detailed.csv ...")
+df_main = pd.read_csv(os.path.join(DATASET_DIR, "10. Quran Detailed.csv"), dtype=str)
+log(f"   {len(df_main)} rows loaded")
+
+# 3 English translations
+log("3. Quran Pak with three English translations ...")
+df_trans = pd.read_csv(
+    os.path.join(DATASET_DIR,
+                 "3. Quran Pak with three English translations and two english tafseers.csv"),
+    dtype=str,
+    on_bad_lines='skip'
+)
+log(f"   {len(df_trans)} rows loaded")
+
+# Root words (word-level Arabic roots)
+log("Root Words.csv ...")
+df_roots = pd.read_csv(os.path.join(DATASET_DIR, "Root Words.csv"), dtype=str)
+log(f"   {len(df_roots)} rows loaded")
+
+# Surah metadata
+log("8. Surah Info.csv ...")
+df_surah = pd.read_csv(os.path.join(DATASET_DIR, "8. Surah Info.csv"), dtype=str)
+log(f"   {len(df_surah)} rows loaded")
+
+
+# ─────────────────────────────────────────────────────────
+# 2. Build lookup maps
+# ─────────────────────────────────────────────────────────
+section("Building lookup maps")
+
+# Translation lookup: (surah, ayah) -> {t1, t2, t3}
+trans_lookup = {}
+missing_trans = 0
+for _, row in df_trans.iterrows():
+    try:
+        k = (int(float(row['Surah'])), int(float(row['Ayat'])))
+        trans_lookup[k] = {
+            't1': clean(row.get('Translation1', '')),
+            't2': clean(row.get('Translation2', '')),
+            't3': clean(row.get('Translation3', '')),
+        }
+    except (ValueError, TypeError, KeyError):
+        missing_trans += 1
+
+log(f"Translation lookup: {len(trans_lookup)} entries  ({missing_trans} skipped)")
+
+# Root words lookup: (chapter, verse) -> [roots]
+roots_lookup = defaultdict(list)
+for _, row in df_roots.iterrows():
+    try:
+        k = (int(float(row['ChapterNo'])), int(float(row['VerseNo'])))
+        root = clean(row.get('Arabic Root Word', ''))
+        if root and root not in roots_lookup[k]:
+            roots_lookup[k].append(root)
+    except (ValueError, TypeError, KeyError):
+        pass
+
+log(f"Root words lookup: {len(roots_lookup)} (surah,ayah) entries")
+
+
+# ─────────────────────────────────────────────────────────
+# 3. Build quran.json
+# ─────────────────────────────────────────────────────────
+section("Building quran.json")
+
+ayaat = []
+skipped = 0
+
+for _, row in df_main.iterrows():
+    try:
+        sn  = int(float(row['surah_no']))
+        an  = int(float(row['ayah_no_surah']))
+        aqn = int(float(row['ayah_no_quran']))
+    except (ValueError, TypeError, KeyError):
+        skipped += 1
+        continue
+
+    k     = (sn, an)
+    trans = trans_lookup.get(k, {})
+    roots = roots_lookup.get(k, [])
+
+    def safe_int(col, fallback=0):
+        try:
+            v = row.get(col, '')
+            return int(float(v)) if v and clean(v) else fallback
+        except (ValueError, TypeError):
+            return fallback
+
+    ayah = {
+        'id':    aqn,
+        'sn':    sn,
+        'an':    an,
+        'sne':   clean(row.get('surah_name_en', '')),
+        'sna':   clean(row.get('surah_name_ar', '')),
+        'snr':   clean(row.get('surah_name_roman', '')),
+        'ar':    clean(row.get('ayah_ar', '')),
+        'en':    clean(row.get('ayah_en', '')),
+        't1':    trans.get('t1', ''),
+        't2':    trans.get('t2', ''),
+        't3':    trans.get('t3', ''),
+        'juz':   safe_int('juz_no'),
+        'ruku':  safe_int('ruko_no'),
+        'manzil': safe_int('manzil_no'),
+        'place': clean(row.get('place_of_revelation', '')),
+        'roots': roots,
+    }
+    ayaat.append(ayah)
+
+ayaat.sort(key=lambda x: x['id'])
+
+out_path = os.path.join(OUTPUT_DIR, 'quran.json')
+with open(out_path, 'w', encoding='utf-8') as f:
+    json.dump(ayaat, f, ensure_ascii=False, separators=(',', ':'))
+
+size_kb = os.path.getsize(out_path) / 1024
+log(f"Written {len(ayaat)} ayaat  ({skipped} skipped)  -> data/quran.json  ({size_kb:.0f} KB)")
+
+# Verify coverage
+no_t1 = sum(1 for a in ayaat if not a['t1'])
+no_t2 = sum(1 for a in ayaat if not a['t2'])
+no_t3 = sum(1 for a in ayaat if not a['t3'])
+log(f"Translation coverage  t1:{len(ayaat)-no_t1}  t2:{len(ayaat)-no_t2}  t3:{len(ayaat)-no_t3}")
+
+
+# ─────────────────────────────────────────────────────────
+# 4. Build surah.json
+# ─────────────────────────────────────────────────────────
+section("Building surah.json")
+
+def safe_int_cell(val, fallback=0):
+    """Handle NaN, date strings like '2-Jan', plain numbers."""
+    if val is None:
+        return fallback
+    s = str(val).strip()
+    if s in ('', 'nan', 'NaN', 'NA'):
+        return fallback
+    # Excel date mangling e.g. '2-Jan' -> extract leading number
+    import re
+    m = re.match(r'^(\d+)', s)
+    if m:
+        return int(m.group(1))
+    try:
+        return int(float(s))
+    except (ValueError, TypeError):
+        return fallback
+
+surahs = []
+for _, row in df_surah.iterrows():
+    try:
+        no = safe_int_cell(row.get('SurahNumber'))
+        if not no:
+            continue
+        surahs.append({
+            'no':     no,
+            'en':     clean(row.get('EnglishTitle', '')),
+            'ar':     clean(row.get('ArabicTitle', '')),
+            'roman':  clean(row.get('RomanTitle', '')),
+            'verses': safe_int_cell(row.get('NumberOfVerses')),
+            'rukus':  safe_int_cell(row.get('NumberOfRukus')),
+            'place':  clean(row.get('PlaceOfRevelation', '')),
+        })
+    except (ValueError, TypeError, KeyError):
+        pass
+
+surahs.sort(key=lambda x: x['no'])
+
+with open(os.path.join(OUTPUT_DIR, 'surah.json'), 'w', encoding='utf-8') as f:
+    json.dump(surahs, f, ensure_ascii=False, separators=(',', ':'))
+
+log(f"Written {len(surahs)} surahs  →  data/surah.json")
+
+
+# ─────────────────────────────────────────────────────────
+# 5. Build juz.json (boundaries derived from quran.json)
+# ─────────────────────────────────────────────────────────
+section("Building juz.json")
+
+juz_map = defaultdict(lambda: {'start': None, 'end': None, 'ayaat': 0})
+for a in ayaat:
+    j = a['juz']
+    if j:
+        if juz_map[j]['start'] is None:
+            juz_map[j]['start'] = a['id']
+        juz_map[j]['end'] = a['id']
+        juz_map[j]['ayaat'] += 1
+
+juz_list = [{'no': k, **v} for k, v in sorted(juz_map.items())]
+
+with open(os.path.join(OUTPUT_DIR, 'juz.json'), 'w', encoding='utf-8') as f:
+    json.dump(juz_list, f, ensure_ascii=False, separators=(',', ':'))
+
+log(f"Written {len(juz_list)} juz  →  data/juz.json")
+
+
+# ─────────────────────────────────────────────────────────
+# Done
+# ─────────────────────────────────────────────────────────
+section("Complete")
+print(f"\n  All data files ready in /data/")
+print(f"  Open index.html to launch the search engine.\n")
