@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python scripts/build_data.py)",
+      "Bash(python -c ' *)",
+      "Bash(findstr /V \"?\")",
+      "Bash(mkdir -p \"D:\\\\Users\\\\asadi\\\\Documents\\\\GitHub\\\\Quran-Search-Engine\\\\.claude\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python -c \"import sys; [print\\(l\\) for l in sys.stdin]\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
+    ]
+  }
+}
