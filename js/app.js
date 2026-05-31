@@ -185,22 +185,36 @@ class QuranApp {
 
   async _run(query) {
     if (!query) return;
-    this._lastQuery     = query;
-    this._answerMode    = null;
-    this._activeFilter  = null;
-    this._allResults    = [];
+
+    // Generation counter: if a newer search fires before this one finishes,
+    // this instance will see gen !== this._searchGen and abort before touching the DOM.
+    this._searchGen = (this._searchGen || 0) + 1;
+    const myGen = this._searchGen;
+
+    this._lastQuery    = query;
+    this._answerMode   = null;
+    this._activeFilter = null;
+    this._allResults   = [];
+
+    // Hard-reset the answer panel immediately — clear HTML so stale content never bleeds
+    const answerPanel = document.getElementById('answer-panel');
+    answerPanel.hidden    = true;
+    answerPanel.innerHTML = '';
 
     document.getElementById('search-section').classList.add('compact');
-    document.getElementById('filter-bar').hidden = true;
+    document.getElementById('filter-bar').hidden     = true;
     document.getElementById('results-section').hidden = true;
-    document.getElementById('answer-panel').hidden = true;
+    document.getElementById('results-grid').innerHTML = '';
     this._showProgress('translate');
 
     try {
       const { results, arabicQuery, extractedRoots } = await this.engine.search(
         query, this.filters, 200,
-        step => this._showProgress(step),
+        step => { if (this._searchGen === myGen) this._showProgress(step); },
       );
+
+      // A newer search has started — discard these results entirely
+      if (this._searchGen !== myGen) return;
 
       const parsed     = parseQuery(query);
       const answerType = this._detectAnswerType(query, parsed);
@@ -232,7 +246,7 @@ class QuranApp {
 
     } catch (err) {
       console.error(err);
-      this._hideProgress();
+      if (this._searchGen === myGen) this._hideProgress();
     }
   }
 
