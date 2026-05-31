@@ -104,7 +104,7 @@ class QuranSearch {
   // ── Main search (async) ───────────────────────────────────────────────────
 
   async search(rawQuery, filters = {}, limit = 150, onProgress) {
-    if (!rawQuery.trim()) return { results: [], arabicQuery: '', extractedRoots: [], exactCount: 0 };
+    if (!rawQuery.trim()) return { results: [], arabicQuery: '', extractedRoots: [], exactCount: 0, exactWords: [] };
 
     const parsed = parseQuery(rawQuery);
     const scores  = {};
@@ -185,6 +185,24 @@ class QuranSearch {
         if (this.arNorm[ayah.id].split(/\s+/).includes(normWord)) {
           addScore(ayah.id, 30, 'patterns', normWord);
           exactSet.add(ayah.id);
+        }
+      }
+    }
+
+    // ── Step 6b: Root fallback for encoding mismatches ─────────────────────
+    // Some Quranic words (e.g. الألباب) use superscript alef (ٰ U+0670) which
+    // normalisation removes, causing a mismatch between EXACT_WORDS forms and arNorm.
+    // When exact words matched nothing but the same terms have known roots via
+    // TRANSLITERATIONS, use those specific roots at near-exact priority.
+    if (parsed.exactWords.length > 0 && exactSet.size === 0 &&
+        (parsed.exactRoots || []).length > 0) {
+      for (const root of parsed.exactRoots) {
+        const ids = this.rootIdx[root];
+        if (ids) {
+          for (const id of ids) {
+            addScore(id, 28, 'patterns', root);
+            exactSet.add(id);
+          }
         }
       }
     }

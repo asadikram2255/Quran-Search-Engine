@@ -161,23 +161,42 @@ class QuranApp {
 
   /**
    * Returns 'addressee_listing' or null.
-   * Only activates when the query is a question AND is asking about address terms.
+   *
+   * Only triggers when the query is SPECIFICALLY asking about what TERMS, NAMES,
+   * or VOCATIVES the Quran uses — not for "what are the characteristics of X",
+   * "how does X behave", "what does the Quran say about X" etc.
+   *
+   * Key principle: must have BOTH a question intent AND explicit term/address clues.
+   * Broad triggers like 'what are the' or 'how does' intentionally removed —
+   * they caused false positives on characteristics/description queries.
    */
   _detectAnswerType(query, parsed) {
     if (!this._isQuestionQuery(query)) return null;
-    if (parsed.intents.includes('address') || parsed.intents.includes('list')) {
-      const q = query.toLowerCase();
-      const addressClues = [
-        'term','terms','address','addresses','addressed','call','called','refer','referred',
-        'phrase','phrases','expression','expressions','vocative','way','ways','used','uses',
-        'how allah','how god','how does','what does quran call','what are the',
-      ];
-      if (addressClues.some(c => q.includes(c))) return 'addressee_listing';
-    }
-    // Also: if explicitly asking about addressees/groups without other strong topic
-    if (parsed.intents.includes('address') && parsed.addresseeIds.length === 0) {
-      return 'addressee_listing';
-    }
+
+    const q = query.toLowerCase();
+
+    // Strong address/term clues — these unambiguously ask about word forms or vocatives
+    const strongTermClues = [
+      'term','terms','address','addresses','addressed',
+      'call','called','refer to','referred to',
+      'phrase','phrases','expression','expressions','vocative',
+      'used to address','uses to address','used by quran to address',
+      'how allah address','how allah call','how god address','how god call',
+      'what does quran call','what name','what names',
+      'what word','what words','what title','what titles',
+    ];
+
+    // Trigger only if address/list intent AND a strong term clue is present
+    const hasAddressIntent = parsed.intents.includes('address');
+    const hasListIntent    = parsed.intents.includes('list');
+    const hasTermClue      = strongTermClues.some(c => q.includes(c));
+
+    if ((hasAddressIntent || hasListIntent) && hasTermClue) return 'addressee_listing';
+
+    // Also trigger when address intent is present AND a specific addressee group
+    // was detected in the query (e.g. "how does Allah address believers")
+    if (hasAddressIntent && parsed.addresseeIds.length > 0) return 'addressee_listing';
+
     return null;
   }
 

@@ -71,8 +71,8 @@ const EXACT_WORDS = {
   'sadihin':      ['الصادقين', 'صادقين'],
   'abrar':        ['الابرار', 'ابرار'],
   'rabbaniyin':   ['ربانيين', 'ربانيون', 'رباني'],
-  'ulul albab':   ['الالباب', 'لباب'],
-  'ulul-albab':   ['الالباب', 'لباب'],
+  'ulul albab':   ['الالباب', 'الالبب', 'لباب'],
+  'ulul-albab':   ['الالباب', 'الالبب', 'لباب'],
   'ahl al-ilm':   ['العلم', 'اهل العلم'],
   'kafiroon':     ['الكافرون', 'الكافرين'],
   'fasiqoon':     ['الفاسقون', 'الفاسقين'],
@@ -1563,7 +1563,7 @@ const CONCEPT_EXPANSIONS = {
   'human':        ['ب ش ر', 'ا ن س'],
   'mankind':      ['ا ن س', 'ب ش ر', 'ا م م'],
   'humanity':     ['ا ن س', 'ب ش ر', 'ن ف س'],
-  'people':       ['ا ن س', 'ق و م', 'ا م م'],
+  'people':       ['ا ن س', 'ا م م'],
   'person':       ['ن ف س', 'ب ش ر'],
   'mortal':       ['ب ش ر', 'م و ت'],
   'creation':     ['خ ل ق', 'ف ط ر', 'ب د ع'],
@@ -1733,6 +1733,7 @@ function parseQuery(rawQuery) {
     addresseeIds:   [],
     topicIds:       [],
     exactWords:     [],   // normalized Arabic word-forms for exact-match boosting
+    exactRoots:     [],   // fallback: TRANSLITERATIONS roots for the exact-matched terms
   };
 
   // 1a. Expand concept words → roots (longest match first to avoid partial matches)
@@ -1754,6 +1755,14 @@ function parseQuery(rawQuery) {
       for (const word of EXACT_WORDS[term]) {
         const norm = normalizeArabic(word);
         if (norm && !matched.exactWords.includes(norm)) matched.exactWords.push(norm);
+      }
+      // Also collect roots from TRANSLITERATIONS for this same term — used as
+      // fallback in search when word-form encoding mismatches prevent exact matching
+      const transEntry = TRANSLITERATIONS[term];
+      if (transEntry && transEntry.roots) {
+        for (const root of transEntry.roots) {
+          if (!matched.exactRoots.includes(root)) matched.exactRoots.push(root);
+        }
       }
     }
   }
