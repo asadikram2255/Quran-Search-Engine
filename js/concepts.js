@@ -1,8 +1,7 @@
 /**
  * Quran Search Engine — Concept Ontology
- * Maps natural-language English terms to Quranic Arabic patterns and root words.
- * This is the "intelligence" layer that enables semantic query understanding
- * without any external API.
+ * Secondary/boost layer. Primary search now goes through the translation pipeline.
+ * These maps add signal for well-known Islamic terms and addressee patterns.
  */
 
 const STOP_WORDS = new Set([
@@ -18,245 +17,345 @@ const STOP_WORDS = new Set([
   'plus','except','up','out','down','because','though','although','while',
   'allah','god','quran','quranic','islamic','islam','verse','ayah','ayat','ayaat',
   'surah','chapter','almighty','lord','says','said','tell','tells','mentioned',
-  'mention','mentions','found','find','find','show','shows','list','give','provides',
+  'mention','mentions','found','find','show','shows','list','give','provides',
+  'describe','describes','talk','talks','speak','speaks','discuss','discusses',
 ]);
 
 /**
- * Transliteration map: Arabic/Islamic/Urdu terms -> English expansion + roots.
- * Allows queries like "bismillah", "taqwa", "riba" to find matching ayaat.
- * Each entry: { english: [...keywords to inject], roots: [...Arabic roots] }
+ * Transliteration map — expands Islamic/Arabic/Urdu terms into English keywords + roots.
+ * Used as a fast-path boost on top of the translation pipeline.
  */
 const TRANSLITERATIONS = {
-  // ── Basmalah & invocation ──────────────────────────────────────────────────
-  'bismillah':      { english: ['name of allah','name god'], roots: ['س م و','ب س م'] },
-  'basmalah':       { english: ['name of allah','in the name'], roots: ['س م و'] },
-  'alhamdulillah':  { english: ['praise allah','praise god','all praise'], roots: ['ح م د'] },
-  'subhanallah':    { english: ['glorify allah','glory to allah','exalt'], roots: ['س ب ح'] },
-  'astaghfirullah': { english: ['seek forgiveness','forgive me allah'], roots: ['غ ف ر'] },
-  'mashallah':      { english: ['will of allah','what allah wills'], roots: ['ش ي ا','و ل ي'] },
-  'inshallah':      { english: ['if allah wills','will of allah','god willing'], roots: ['ش ي ا'] },
+  // ── Invocation ────────────────────────────────────────────────────────────
+  'bismillah':       { english: ['name','name of allah','in the name'], roots: ['س م و','ب س م'] },
+  'basmalah':        { english: ['name of allah','in the name'], roots: ['س م و'] },
+  'alhamdulillah':   { english: ['praise','all praise','thankful'], roots: ['ح م د'] },
+  'subhanallah':     { english: ['glory','glorify','exalt'], roots: ['س ب ح'] },
+  'astaghfirullah':  { english: ['forgiveness','forgive','seek pardon'], roots: ['غ ف ر'] },
+  'mashallah':       { english: ['will of allah','what allah wills'], roots: ['ش ي ا','و ل ي'] },
+  'inshallah':       { english: ['if allah wills','god willing'], roots: ['ش ي ا'] },
+  'allahu akbar':    { english: ['greatest','great','magnify'], roots: ['ك ب ر'] },
+  'la ilaha illallah': { english: ['no god but allah','monotheism','oneness'], roots: ['و ح د','ا ل ه'] },
 
-  // ── Core worship acts ──────────────────────────────────────────────────────
-  'salah':     { english: ['prayer','pray','worship'], roots: ['ص ل و','ع ب د'] },
-  'salat':     { english: ['prayer','pray','worship'], roots: ['ص ل و'] },
-  'namaz':     { english: ['prayer','pray'], roots: ['ص ل و'] },
-  'sawm':      { english: ['fasting','fast','abstain'], roots: ['ص و م'] },
-  'siyam':     { english: ['fasting','fast'], roots: ['ص و م'] },
-  'roza':      { english: ['fasting','fast'], roots: ['ص و م'] },
-  'zakat':     { english: ['charity','alms','poor due','purification of wealth'], roots: ['ز ك و','ن ف ق'] },
-  'zakah':     { english: ['charity','alms','poor due'], roots: ['ز ك و'] },
-  'hajj':      { english: ['pilgrimage','holy pilgrimage','kaaba','mecca'], roots: ['ح ج ج'] },
-  'umrah':     { english: ['pilgrimage','lesser pilgrimage'], roots: ['ع م ر'] },
-  'jihad':     { english: ['strive','striving','effort','struggle','path of allah'], roots: ['ج ه د'] },
+  // ── Pillars of Islam ──────────────────────────────────────────────────────
+  'salah':      { english: ['prayer','pray','worship'], roots: ['ص ل و','ع ب د'] },
+  'salat':      { english: ['prayer','pray','worship'], roots: ['ص ل و'] },
+  'namaz':      { english: ['prayer','pray'], roots: ['ص ل و'] },
+  'sawm':       { english: ['fasting','fast','abstain'], roots: ['ص و م'] },
+  'siyam':      { english: ['fasting','fast'], roots: ['ص و م'] },
+  'roza':       { english: ['fasting','fast'], roots: ['ص و م'] },
+  'zakat':      { english: ['charity','alms','poor due','purification'], roots: ['ز ك و','ن ف ق'] },
+  'zakah':      { english: ['charity','alms','poor due'], roots: ['ز ك و'] },
+  'hajj':       { english: ['pilgrimage','kaaba','mecca','sacred house'], roots: ['ح ج ج'] },
+  'umrah':      { english: ['pilgrimage','lesser pilgrimage'], roots: ['ع م ر'] },
+  'shahadah':   { english: ['testimony','testify','witness','declaration of faith'], roots: ['ش ه د'] },
 
   // ── Purification ──────────────────────────────────────────────────────────
-  'wudu':      { english: ['ablution','purification','wash','clean'], roots: ['و ض ا','ط ه ر'] },
-  'wudhu':     { english: ['ablution','purification','wash'], roots: ['و ض ا','ط ه ر'] },
-  'ghusl':     { english: ['ritual bath','purification','wash','cleanse'], roots: ['غ س ل','ط ه ر'] },
-  'tayammum':  { english: ['dry ablution','purification with dust','soil'], roots: ['ي م م','ط ه ر'] },
-  'tahara':    { english: ['purification','purity','clean'], roots: ['ط ه ر'] },
-  'taharah':   { english: ['purification','purity','clean'], roots: ['ط ه ر'] },
+  'wudu':       { english: ['ablution','purification','wash','cleanse'], roots: ['و ض ا','ط ه ر'] },
+  'wudhu':      { english: ['ablution','purification','wash'], roots: ['و ض ا','ط ه ر'] },
+  'ghusl':      { english: ['ritual bath','purification','wash'], roots: ['غ س ل','ط ه ر'] },
+  'tayammum':   { english: ['dry ablution','purification with dust'], roots: ['ي م م','ط ه ر'] },
+  'tahara':     { english: ['purification','purity','clean'], roots: ['ط ه ر'] },
+  'taharah':    { english: ['purification','purity','clean'], roots: ['ط ه ر'] },
+  'najis':      { english: ['impure','unclean','filth'], roots: ['ن ج س'] },
 
   // ── Prayer postures ────────────────────────────────────────────────────────
-  'sujood':    { english: ['prostration','prostrate','bow down'], roots: ['س ج د'] },
-  'sajdah':    { english: ['prostration','prostrate'], roots: ['س ج د'] },
-  'ruku':      { english: ['bowing','bow','kneel'], roots: ['ر ك ع'] },
-  'qiyam':     { english: ['standing','stand in prayer'], roots: ['ق و م'] },
-  'tashahhud': { english: ['testimony','testify','witness'], roots: ['ش ه د'] },
+  'sujood':     { english: ['prostration','prostrate','bow down'], roots: ['س ج د'] },
+  'sajdah':     { english: ['prostration','prostrate'], roots: ['س ج د'] },
+  'ruku':       { english: ['bowing','bow','kneel'], roots: ['ر ك ع'] },
+  'qiyam':      { english: ['standing','stand in prayer'], roots: ['ق و م'] },
+  'tashahhud':  { english: ['testimony','testify','witness'], roots: ['ش ه د'] },
+  'jumuah':     { english: ['friday','friday prayer','congregation'], roots: ['ج م ع'] },
+  'jummah':     { english: ['friday','friday prayer'], roots: ['ج م ع'] },
+  'azan':       { english: ['call to prayer','adhan'], roots: ['ا ذ ن'] },
+  'adhan':      { english: ['call to prayer','announce prayer'], roots: ['ا ذ ن'] },
+  'iqamah':     { english: ['prayer call','standing prayer'], roots: ['ق و م'] },
 
   // ── Spiritual qualities ───────────────────────────────────────────────────
-  'taqwa':     { english: ['piety','righteousness','fear of allah','god-consciousness','devout'], roots: ['و ق ي'] },
-  'iman':      { english: ['faith','belief','believe','trust in allah'], roots: ['ا م ن'] },
-  'ihsan':     { english: ['excellence','perfection','good deeds','righteous'], roots: ['ح س ن'] },
-  'ikhlas':    { english: ['sincerity','sincere','purely for allah'], roots: ['خ ل ص'] },
-  'tawakkul':  { english: ['trust in allah','reliance on allah','put trust'], roots: ['و ك ل'] },
-  'tawakkal':  { english: ['trust in allah','reliance on allah'], roots: ['و ك ل'] },
-  'sabr':      { english: ['patience','patient','perseverance','steadfast'], roots: ['ص ب ر'] },
-  'shukr':     { english: ['gratitude','grateful','thankful','thankfulness'], roots: ['ش ك ر'] },
-  'tawbah':    { english: ['repentance','repent','turn back to allah'], roots: ['ت و ب'] },
-  'tawba':     { english: ['repentance','repent'], roots: ['ت و ب'] },
-  'istighfar': { english: ['seek forgiveness','ask forgiveness','repent'], roots: ['غ ف ر'] },
-  'dua':       { english: ['supplication','prayer','invoke','call upon','ask allah'], roots: ['د ع و'] },
-  'dhikr':     { english: ['remembrance of allah','remember allah','mention allah','glorify'], roots: ['ذ ك ر'] },
-  'zikr':      { english: ['remembrance of allah','remember allah'], roots: ['ذ ك ر'] },
-  'tasbih':    { english: ['glorification','glorify allah','subhan'], roots: ['س ب ح'] },
-  'istiqamah': { english: ['steadfastness','stand firm','upright','straight path'], roots: ['ق و م','س ت ق'] },
+  'taqwa':      { english: ['piety','righteousness','god-fearing','devout','god-consciousness'], roots: ['و ق ي'] },
+  'iman':       { english: ['faith','belief','believe','trust'], roots: ['ا م ن'] },
+  'ihsan':      { english: ['excellence','perfection','good deeds','righteous'], roots: ['ح س ن'] },
+  'ikhlas':     { english: ['sincerity','sincere','purely for allah'], roots: ['خ ل ص'] },
+  'tawakkul':   { english: ['trust in allah','reliance','put trust','depend on allah'], roots: ['و ك ل'] },
+  'tawakkal':   { english: ['trust in allah','reliance'], roots: ['و ك ل'] },
+  'sabr':       { english: ['patience','patient','perseverance','steadfast','endure'], roots: ['ص ب ر'] },
+  'shukr':      { english: ['gratitude','grateful','thankful'], roots: ['ش ك ر'] },
+  'tawbah':     { english: ['repentance','repent','turn back to allah'], roots: ['ت و ب'] },
+  'tawba':      { english: ['repentance','repent'], roots: ['ت و ب'] },
+  'istighfar':  { english: ['seek forgiveness','ask forgiveness','repent'], roots: ['غ ف ر'] },
+  'dua':        { english: ['supplication','invoke','call upon','ask allah'], roots: ['د ع و'] },
+  'dhikr':      { english: ['remembrance of allah','remember allah','mention allah'], roots: ['ذ ك ر'] },
+  'zikr':       { english: ['remembrance of allah','remember allah'], roots: ['ذ ك ر'] },
+  'tasbih':     { english: ['glorification','glorify','subhan'], roots: ['س ب ح'] },
+  'istiqamah':  { english: ['steadfastness','stand firm','upright','straight path'], roots: ['ق و م'] },
+  'zuhd':       { english: ['asceticism','detachment from world','simple living'], roots: ['ز ه د'] },
+  'wara':       { english: ['caution','scrupulous','avoid doubtful'], roots: ['و ر ع'] },
+  'tawadu':     { english: ['humility','humble','modest'], roots: ['و ض ع'] },
 
-  // ── Faith concepts ────────────────────────────────────────────────────────
-  'tawheed':   { english: ['monotheism','oneness of allah','one god','no deity except'], roots: ['و ح د'] },
-  'tauhid':    { english: ['monotheism','oneness of allah'], roots: ['و ح د'] },
-  'yaqeen':    { english: ['certainty','certain','conviction','sure'], roots: ['ي ق ن'] },
-  'yaqin':     { english: ['certainty','certain'], roots: ['ي ق ن'] },
-  'niyyah':    { english: ['intention','intend','purpose'], roots: ['ن و ي'] },
-  'niyat':     { english: ['intention','intend'], roots: ['ن و ي'] },
+  // ── Faith pillars ────────────────────────────────────────────────────────
+  'tawheed':    { english: ['monotheism','oneness of allah','one god'], roots: ['و ح د'] },
+  'tauhid':     { english: ['monotheism','oneness of allah'], roots: ['و ح د'] },
+  'yaqeen':     { english: ['certainty','conviction','sure'], roots: ['ي ق ن'] },
+  'yaqin':      { english: ['certainty','certain'], roots: ['ي ق ن'] },
+  'niyyah':     { english: ['intention','intend','purpose'], roots: ['ن و ي'] },
+  'niyat':      { english: ['intention','intend'], roots: ['ن و ي'] },
+  'aqeedah':    { english: ['creed','belief','doctrine','faith'], roots: ['ع ق د'] },
+  'aqidah':     { english: ['creed','belief'], roots: ['ع ق د'] },
 
   // ── Negative traits ───────────────────────────────────────────────────────
-  'kufr':      { english: ['disbelief','reject faith','deny','ingratitude'], roots: ['ك ف ر'] },
-  'nifaq':     { english: ['hypocrisy','hypocrite','two-faced'], roots: ['ن ف ق'] },
-  'shirk':     { english: ['polytheism','associating partners','idolatry','idol'], roots: ['ش ر ك'] },
-  'kibr':      { english: ['arrogance','pride','haughty','proud'], roots: ['ك ب ر'] },
-  'hasad':     { english: ['envy','jealousy','malice'], roots: ['ح س د'] },
-  'zulm':      { english: ['injustice','oppression','wrong','wrongdoer','transgress'], roots: ['ظ ل م'] },
-  'zulum':     { english: ['injustice','oppression','wrong'], roots: ['ظ ل م'] },
-  'fasad':     { english: ['corruption','corrupt','mischief','spread corruption'], roots: ['ف س د'] },
-  'fitnah':    { english: ['trial','tribulation','temptation','discord','strife'], roots: ['ف ت ن'] },
-  'fitna':     { english: ['trial','tribulation','temptation'], roots: ['ف ت ن'] },
-  'kibr':      { english: ['arrogance','haughty','proud'], roots: ['ك ب ر'] },
-  'riya':      { english: ['showing off','ostentation','hypocrisy'], roots: ['ر ا ي'] },
+  'kufr':       { english: ['disbelief','reject faith','deny','ingratitude'], roots: ['ك ف ر'] },
+  'kafir':      { english: ['disbeliever','unbeliever','rejecter'], roots: ['ك ف ر'] },
+  'nifaq':      { english: ['hypocrisy','hypocrite','two-faced'], roots: ['ن ف ق'] },
+  'munafiq':    { english: ['hypocrite','two-faced','insincere'], roots: ['ن ف ق'] },
+  'shirk':      { english: ['polytheism','associating partners','idolatry','idol'], roots: ['ش ر ك'] },
+  'mushrik':    { english: ['polytheist','idolater','associating partners'], roots: ['ش ر ك'] },
+  'kibr':       { english: ['arrogance','pride','haughty','proud'], roots: ['ك ب ر'] },
+  'hasad':      { english: ['envy','jealousy','malice'], roots: ['ح س د'] },
+  'zulm':       { english: ['injustice','oppression','wrong','transgress'], roots: ['ظ ل م'] },
+  'zulum':      { english: ['injustice','oppression','wrong'], roots: ['ظ ل م'] },
+  'fasad':      { english: ['corruption','mischief','spread corruption'], roots: ['ف س د'] },
+  'fitnah':     { english: ['trial','tribulation','temptation','discord','strife'], roots: ['ف ت ن'] },
+  'fitna':      { english: ['trial','tribulation','temptation'], roots: ['ف ت ن'] },
+  'riya':       { english: ['showing off','ostentation','insincerity'], roots: ['ر ا ي'] },
+  'ghibah':     { english: ['backbiting','slander','speak ill'], roots: ['غ ي ب'] },
+  'nameemah':   { english: ['tale-carrying','gossip','slander'], roots: ['ن م م'] },
+  'takabbur':   { english: ['arrogance','haughty','proud'], roots: ['ك ب ر'] },
+  'ujub':       { english: ['conceit','self-admiration','vanity'], roots: ['ع ج ب'] },
 
-  // ── Family & social law ───────────────────────────────────────────────────
-  'nikah':     { english: ['marriage','marry','wed','spouse'], roots: ['ن ك ح'] },
-  'talaq':     { english: ['divorce','separation','dissolve marriage'], roots: ['ط ل ق'] },
-  'mahr':      { english: ['dowry','bridal gift','dower','marriage gift'], roots: ['م ه ر'] },
-  'iddah':     { english: ['waiting period','divorce waiting','remarriage period'], roots: ['ع د د'] },
-  'iddat':     { english: ['waiting period'], roots: ['ع د د'] },
-  'walimah':   { english: ['wedding feast','marriage feast'], roots: ['و ل م'] },
-  'mahram':    { english: ['prohibited kin','unmarriageable relatives'], roots: ['ح ر م'] },
+  // ── Family & social ───────────────────────────────────────────────────────
+  'nikah':      { english: ['marriage','marry','wed','spouse'], roots: ['ن ك ح'] },
+  'talaq':      { english: ['divorce','separation','dissolve marriage'], roots: ['ط ل ق'] },
+  'mahr':       { english: ['dowry','bridal gift','dower'], roots: ['م ه ر'] },
+  'iddah':      { english: ['waiting period','divorce waiting'], roots: ['ع د د'] },
+  'iddat':      { english: ['waiting period'], roots: ['ع د د'] },
+  'mahram':     { english: ['prohibited kin','unmarriageable relatives'], roots: ['ح ر م'] },
+  'walimah':    { english: ['wedding feast','marriage feast'], roots: ['و ل م'] },
+  'nafaqah':    { english: ['maintenance','provision for family','financial support'], roots: ['ن ف ق'] },
+  'yateem':     { english: ['orphan','fatherless child'], roots: ['ي ت م'] },
+  'miskin':     { english: ['poor','destitute','needy'], roots: ['م س ك'] },
+  'faqeer':     { english: ['poor','impoverished','needy'], roots: ['ف ق ر'] },
+  'ibn':        { english: ['son','child'], roots: ['ب ن و'] },
+  'umm':        { english: ['mother'], roots: ['ا م م'] },
+  'ab':         { english: ['father'], roots: ['ا ب و'] },
 
   // ── Finance & trade ───────────────────────────────────────────────────────
-  'riba':      { english: ['usury','interest','increase unlawful','prohibited interest'], roots: ['ر ب و'] },
-  'sood':      { english: ['usury','interest'], roots: ['ر ب و'] },
-  'bay':       { english: ['trade','sale','sell','buy'], roots: ['ب ي ع'] },
-  'tijara':    { english: ['trade','commerce','business','merchant'], roots: ['ت ج ر'] },
-  'tijarah':   { english: ['trade','commerce','business'], roots: ['ت ج ر'] },
-  'halal':     { english: ['permissible','lawful','allowed','licit'], roots: ['ح ل ل'] },
-  'haram':     { english: ['forbidden','prohibited','unlawful','illicit'], roots: ['ح ر م'] },
-  'waqf':      { english: ['endowment','charitable donation'], roots: ['و ق ف'] },
-  'mirath':    { english: ['inheritance','inheriting','estate'], roots: ['و ر ث'] },
-  'wirasah':   { english: ['inheritance'], roots: ['و ر ث'] },
+  'riba':       { english: ['usury','interest','unlawful increase'], roots: ['ر ب و'] },
+  'sood':       { english: ['usury','interest'], roots: ['ر ب و'] },
+  'bay':        { english: ['trade','sale','sell','buy'], roots: ['ب ي ع'] },
+  'tijara':     { english: ['trade','commerce','business'], roots: ['ت ج ر'] },
+  'tijarah':    { english: ['trade','commerce','business'], roots: ['ت ج ر'] },
+  'halal':      { english: ['permissible','lawful','allowed'], roots: ['ح ل ل'] },
+  'haram':      { english: ['forbidden','prohibited','unlawful'], roots: ['ح ر م'] },
+  'waqf':       { english: ['endowment','charitable donation'], roots: ['و ق ف'] },
+  'mirath':     { english: ['inheritance','estate'], roots: ['و ر ث'] },
+  'wirasah':    { english: ['inheritance'], roots: ['و ر ث'] },
+  'wasiyyah':   { english: ['will','bequest','testament'], roots: ['و ص ي'] },
+  'qard':       { english: ['loan','debt','lend','borrow'], roots: ['ق ر ض'] },
 
-  // ── Legal punishments ──────────────────────────────────────────────────────
-  'qisas':     { english: ['retaliation','equal punishment','eye for eye'], roots: ['ق ص ص'] },
-  'hudood':    { english: ['prescribed punishment','limits of allah','legal punishment'], roots: ['ح د د'] },
-  'hudud':     { english: ['prescribed punishment','limits'], roots: ['ح د د'] },
-  'diyah':     { english: ['blood money','compensation murder'], roots: ['د ي و'] },
+  // ── Legal ─────────────────────────────────────────────────────────────────
+  'qisas':      { english: ['retaliation','equal punishment','eye for eye'], roots: ['ق ص ص'] },
+  'hudood':     { english: ['prescribed punishment','limits of allah'], roots: ['ح د د'] },
+  'hudud':      { english: ['prescribed punishment','limits'], roots: ['ح د د'] },
+  'diyah':      { english: ['blood money','compensation'], roots: ['د ي و'] },
+  'hadd':       { english: ['boundary','limit','punishment'], roots: ['ح د د'] },
+  'zina':       { english: ['adultery','fornication','illegal intercourse'], roots: ['ز ن ي'] },
+  'sariqa':     { english: ['theft','steal','stealing'], roots: ['س ر ق'] },
 
-  // ── Metaphysical / soul ───────────────────────────────────────────────────
-  'ruh':       { english: ['spirit','soul','breath of life','life'], roots: ['ر و ح'] },
-  'nafs':      { english: ['soul','self','ego','inner self','person'], roots: ['ن ف س'] },
-  'qalb':      { english: ['heart','spiritual heart','mind'], roots: ['ق ل ب'] },
-  'noor':      { english: ['light','divine light','guidance light'], roots: ['ن و ر'] },
-  'nur':       { english: ['light','divine light'], roots: ['ن و ر'] },
-  'huda':      { english: ['guidance','guide','right path'], roots: ['ه د ي'] },
-  'hidayah':   { english: ['guidance','guide','right path'], roots: ['ه د ي'] },
-  'ghayb':     { english: ['unseen','hidden','beyond perception','unknown'], roots: ['غ ي ب'] },
-  'ghaib':     { english: ['unseen','hidden'], roots: ['غ ي ب'] },
-  'barakah':   { english: ['blessing','bless','bounty','abundance'], roots: ['ب ر ك'] },
-  'baraka':    { english: ['blessing','bless'], roots: ['ب ر ك'] },
-  'rizq':      { english: ['provision','sustenance','livelihood','bounty'], roots: ['ر ز ق'] },
-  'ajal':      { english: ['appointed time','death','term','fixed time'], roots: ['ا ج ل'] },
-  'qadr':      { english: ['divine decree','predestination','measure','power'], roots: ['ق د ر'] },
-  'qada':      { english: ['divine decree','judgment','decision'], roots: ['ق ض ي'] },
-  'taqdeer':   { english: ['divine decree','destiny'], roots: ['ق د ر'] },
+  // ── Soul / metaphysics ────────────────────────────────────────────────────
+  'ruh':        { english: ['spirit','soul','breath of life'], roots: ['ر و ح'] },
+  'nafs':       { english: ['soul','self','ego','inner self','person'], roots: ['ن ف س'] },
+  'qalb':       { english: ['heart','spiritual heart','mind'], roots: ['ق ل ب'] },
+  'noor':       { english: ['light','divine light','guidance'], roots: ['ن و ر'] },
+  'nur':        { english: ['light','divine light'], roots: ['ن و ر'] },
+  'huda':       { english: ['guidance','guide','right path'], roots: ['ه د ي'] },
+  'hidayah':    { english: ['guidance','guide','right path'], roots: ['ه د ي'] },
+  'ghayb':      { english: ['unseen','hidden','unknown'], roots: ['غ ي ب'] },
+  'ghaib':      { english: ['unseen','hidden'], roots: ['غ ي ب'] },
+  'barakah':    { english: ['blessing','bounty','abundance'], roots: ['ب ر ك'] },
+  'baraka':     { english: ['blessing','bless'], roots: ['ب ر ك'] },
+  'rizq':       { english: ['provision','sustenance','livelihood','bounty'], roots: ['ر ز ق'] },
+  'ajal':       { english: ['appointed time','death','fixed time'], roots: ['ا ج ل'] },
+  'qadr':       { english: ['divine decree','predestination','measure','power'], roots: ['ق د ر'] },
+  'qada':       { english: ['divine decree','judgment','decision'], roots: ['ق ض ي'] },
+  'taqdeer':    { english: ['divine decree','destiny'], roots: ['ق د ر'] },
+  'aql':        { english: ['intellect','reason','mind'], roots: ['ع ق ل'] },
+  'ilham':      { english: ['inspiration','inspired'], roots: ['ل ه م'] },
 
   // ── Cosmos / divine ───────────────────────────────────────────────────────
-  'arsh':      { english: ['throne','throne of allah','highest throne'], roots: ['ع ر ش'] },
-  'kursi':     { english: ['footstool','seat','chair','kursi verse'], roots: ['ك ر س'] },
+  'arsh':       { english: ['throne','throne of allah','highest throne'], roots: ['ع ر ش'] },
+  'kursi':      { english: ['footstool','seat','chair'], roots: ['ك ر س'] },
+  'loh':        { english: ['preserved tablet','written','record'], roots: ['ل و ح'] },
+  'lauh':       { english: ['preserved tablet','written record'], roots: ['ل و ح'] },
+  'qalam':      { english: ['pen','write','written'], roots: ['ق ل م'] },
 
   // ── Eschatology ───────────────────────────────────────────────────────────
-  'qiyamah':   { english: ['resurrection','day of judgment','last day','judgment'], roots: ['ق و م'] },
-  'akhirah':   { english: ['hereafter','afterlife','next life','eternal life'], roots: ['ا خ ر'] },
-  'akhira':    { english: ['hereafter','afterlife'], roots: ['ا خ ر'] },
-  'jannah':    { english: ['paradise','garden','heaven','bliss'], roots: ['ج ن ن'] },
-  'jahannam':  { english: ['hell','hellfire','fire','punishment'], roots: ['ج ح م','ن ا ر'] },
-  'naar':      { english: ['fire','hellfire'], roots: ['ن ا ر'] },
-  'barzakh':   { english: ['barrier','intermediate state','between death resurrection'], roots: ['ب ر ز'] },
-  'shafaa':    { english: ['intercession','intercede','pleading'], roots: ['ش ف ع'] },
-  'shafaah':   { english: ['intercession','intercede'], roots: ['ش ف ع'] },
-  'mizan':     { english: ['scales','balance','weigh deeds'], roots: ['و ز ن'] },
-  'hashr':     { english: ['gathering','resurrection gathering','assembly'], roots: ['ح ش ر'] },
-  'hisab':     { english: ['reckoning','account','judgment','record of deeds'], roots: ['ح س ب'] },
+  'qiyamah':    { english: ['resurrection','day of judgment','last day'], roots: ['ق و م'] },
+  'akhirah':    { english: ['hereafter','afterlife','next life'], roots: ['ا خ ر'] },
+  'akhira':     { english: ['hereafter','afterlife'], roots: ['ا خ ر'] },
+  'jannah':     { english: ['paradise','garden','heaven','bliss'], roots: ['ج ن ن'] },
+  'jahannam':   { english: ['hell','hellfire','fire','punishment'], roots: ['ج ح م','ن ا ر'] },
+  'naar':       { english: ['fire','hellfire'], roots: ['ن ا ر'] },
+  'barzakh':    { english: ['barrier','intermediate state'], roots: ['ب ر ز'] },
+  'shafaa':     { english: ['intercession','intercede','pleading'], roots: ['ش ف ع'] },
+  'shafaah':    { english: ['intercession','intercede'], roots: ['ش ف ع'] },
+  'mizan':      { english: ['scales','balance','weigh deeds'], roots: ['و ز ن'] },
+  'hashr':      { english: ['gathering','assembly'], roots: ['ح ش ر'] },
+  'hisab':      { english: ['reckoning','account','judgment'], roots: ['ح س ب'] },
+  'sirat':      { english: ['bridge','path','crossing'], roots: ['س ر ط'] },
+  'mahshar':    { english: ['gathering place','day of assembly'], roots: ['ح ش ر'] },
+  'shaheed':    { english: ['martyr','witness'], roots: ['ش ه د'] },
+  'siddiq':     { english: ['truthful','sincere','righteous'], roots: ['ص د ق'] },
+  'wali':       { english: ['friend of allah','guardian','protector'], roots: ['و ل ي'] },
 
   // ── Beings ────────────────────────────────────────────────────────────────
-  'malaika':   { english: ['angels','angel'], roots: ['م ل ك'] },
-  'malaikah':  { english: ['angels','angel'], roots: ['م ل ك'] },
-  'jibreel':   { english: ['gabriel','angel gabriel','holy spirit'], roots: ['ج ب ر'] },
-  'jibril':    { english: ['gabriel','angel gabriel'], roots: ['ج ب ر'] },
-  'iblis':     { english: ['satan','devil','enemy of allah','cursed'], roots: ['ب ل س','ش ي ط'] },
-  'shaytan':   { english: ['satan','devil','evil','enemy'], roots: ['ش ي ط'] },
-  'shaitan':   { english: ['satan','devil','evil'], roots: ['ش ي ط'] },
-  'jinn':      { english: ['jinn','spirit beings','invisible beings'], roots: ['ج ن ن'] },
+  'malaika':    { english: ['angels','angel'], roots: ['م ل ك'] },
+  'malaikah':   { english: ['angels','angel'], roots: ['م ل ك'] },
+  'jibreel':    { english: ['gabriel','angel gabriel'], roots: ['ج ب ر'] },
+  'jibril':     { english: ['gabriel','angel gabriel'], roots: ['ج ب ر'] },
+  'mikail':     { english: ['michael','angel michael'], roots: ['م ك ل'] },
+  'israfel':    { english: ['israfil','angel of trumpet'], roots: ['ن ف خ'] },
+  'izrail':     { english: ['angel of death','take soul'], roots: ['م و ت'] },
+  'iblis':      { english: ['satan','devil','enemy','cursed'], roots: ['ب ل س','ش ي ط'] },
+  'shaytan':    { english: ['satan','devil','evil','enemy'], roots: ['ش ي ط'] },
+  'shaitan':    { english: ['satan','devil','evil'], roots: ['ش ي ط'] },
+  'jinn':       { english: ['jinn','spirit beings','invisible beings'], roots: ['ج ن ن'] },
+  'ins':        { english: ['mankind','humans','human beings'], roots: ['ا ن س'] },
+  'insan':      { english: ['human being','mankind','person'], roots: ['ا ن س'] },
+  'bashar':     { english: ['human','mortal','mankind'], roots: ['ب ش ر'] },
 
-  // ── Scripture & revelation ────────────────────────────────────────────────
-  'injeel':    { english: ['gospel','bible','new testament','jesus scripture'], roots: ['ن ج ل'] },
-  'injil':     { english: ['gospel','bible'], roots: ['ن ج ل'] },
-  'tawrat':    { english: ['torah','old testament','moses scripture','law'], roots: ['و ر ث'] },
-  'taurat':    { english: ['torah','old testament'], roots: ['و ر ث'] },
-  'zabur':     { english: ['psalms','psalms of david','dawud scripture'], roots: ['ز ب ر'] },
-  'wahy':      { english: ['revelation','inspire','divine revelation'], roots: ['و ح ي'] },
-  'tanzeel':   { english: ['revelation','sent down','revealed'], roots: ['ن ز ل'] },
-  'kitab':     { english: ['book','scripture','written record'], roots: ['ك ت ب'] },
+  // ── Scripture ────────────────────────────────────────────────────────────
+  'injeel':     { english: ['gospel','bible','new testament'], roots: ['ن ج ل'] },
+  'injil':      { english: ['gospel','bible'], roots: ['ن ج ل'] },
+  'tawrat':     { english: ['torah','old testament','moses scripture'], roots: ['و ر ث'] },
+  'taurat':     { english: ['torah','old testament'], roots: ['و ر ث'] },
+  'zabur':      { english: ['psalms','psalms of david'], roots: ['ز ب ر'] },
+  'wahy':       { english: ['revelation','inspire','divine revelation'], roots: ['و ح ي'] },
+  'tanzeel':    { english: ['revelation','sent down','revealed'], roots: ['ن ز ل'] },
+  'kitab':      { english: ['book','scripture','written record'], roots: ['ك ت ب'] },
+  'furqan':     { english: ['criterion','distinguisher','quran'], roots: ['ف ر ق'] },
+  'zikrullah':  { english: ['remembrance of allah','mention of allah'], roots: ['ذ ك ر'] },
 
   // ── Prophet names ─────────────────────────────────────────────────────────
-  'nuh':       { english: ['noah','prophet noah','ark','flood'], roots: ['ن و ح'] },
-  'ibrahim':   { english: ['abraham','prophet abraham','father prophets'], roots: ['ب ر ه'] },
-  'ismail':    { english: ['ishmael','prophet ishmael'], roots: ['س م ع'] },
-  'ishaq':     { english: ['isaac','prophet isaac'], roots: ['س ح ق'] },
-  'yaqub':     { english: ['jacob','prophet jacob','israel'], roots: ['ع ق ب'] },
-  'yusuf':     { english: ['joseph','prophet joseph','egypt'], roots: ['ي س ف'] },
-  'musa':      { english: ['moses','prophet moses','pharaoh','exodus','israel'], roots: ['م و س'] },
-  'harun':     { english: ['aaron','prophet aaron'], roots: ['ه ر ن'] },
-  'dawud':     { english: ['david','prophet david','psalms','king'], roots: ['د و د'] },
-  'sulayman':  { english: ['solomon','prophet solomon','king','queen sheba'], roots: ['س ل م'] },
-  'isa':       { english: ['jesus','prophet jesus','mary son','messiah','christ'], roots: ['ع ي س'] },
-  'yahya':     { english: ['john','prophet john','john the baptist'], roots: ['ي ح ي'] },
-  'zakariya':  { english: ['zechariah','prophet zechariah'], roots: ['ز ك ر'] },
-  'ayyub':     { english: ['job','prophet job','affliction patience'], roots: ['ا ي ب'] },
-  'yunus':     { english: ['jonah','prophet jonah','whale','fish'], roots: ['ي و ن'] },
-  'lut':       { english: ['lot','prophet lot','sodom','destruction'], roots: ['ل و ط'] },
-  'shuaib':    { english: ['jethro','prophet shuaib','midian'], roots: ['ش ع ب'] },
-  'hud':       { english: ['prophet hud','aad','aad people'], roots: ['ه و د'] },
-  'salih':     { english: ['prophet salih','thamud','camel'], roots: ['ص ل ح'] },
-  'idris':     { english: ['enoch','prophet idris'], roots: ['د ر س'] },
-  'dhulkifl':  { english: ['dhul kifl','ezekiel'], roots: ['ك ف ل'] },
-  'ilyas':     { english: ['elijah','prophet elijah'], roots: ['ا ل ي'] },
-  'alyasa':    { english: ['elisha','prophet elisha'], roots: ['ي س ع'] },
+  'nuh':        { english: ['noah','prophet noah','ark','flood'], roots: ['ن و ح'] },
+  'ibrahim':    { english: ['abraham','prophet abraham','father of prophets'], roots: ['ب ر ه'] },
+  'ismail':     { english: ['ishmael','prophet ishmael'], roots: ['س م ع'] },
+  'ishaq':      { english: ['isaac','prophet isaac'], roots: ['س ح ق'] },
+  'yaqub':      { english: ['jacob','prophet jacob','israel'], roots: ['ع ق ب'] },
+  'yusuf':      { english: ['joseph','prophet joseph','egypt'], roots: ['ي س ف'] },
+  'musa':       { english: ['moses','prophet moses','pharaoh','exodus'], roots: ['م و س'] },
+  'harun':      { english: ['aaron','prophet aaron'], roots: ['ه ر ن'] },
+  'dawud':      { english: ['david','prophet david','psalms','king'], roots: ['د و د'] },
+  'sulayman':   { english: ['solomon','prophet solomon','king'], roots: ['س ل م'] },
+  'isa':        { english: ['jesus','prophet jesus','mary son','messiah'], roots: ['ع ي س'] },
+  'yahya':      { english: ['john the baptist','prophet john'], roots: ['ي ح ي'] },
+  'zakariya':   { english: ['zechariah','prophet zechariah'], roots: ['ز ك ر'] },
+  'ayyub':      { english: ['job','prophet job','affliction','patience'], roots: ['ا ي ب'] },
+  'yunus':      { english: ['jonah','prophet jonah','whale','fish'], roots: ['ي و ن'] },
+  'lut':        { english: ['lot','prophet lot','sodom'], roots: ['ل و ط'] },
+  'shuaib':     { english: ['jethro','prophet shuaib','midian'], roots: ['ش ع ب'] },
+  'hud':        { english: ['prophet hud','aad people'], roots: ['ه و د'] },
+  'salih':      { english: ['prophet salih','thamud','camel'], roots: ['ص ل ح'] },
+  'idris':      { english: ['enoch','prophet idris'], roots: ['د ر س'] },
+  'dhulkifl':   { english: ['dhul kifl','ezekiel'], roots: ['ك ف ل'] },
+  'ilyas':      { english: ['elijah','prophet elijah'], roots: ['ا ل ي'] },
+  'alyasa':     { english: ['elisha','prophet elisha'], roots: ['ي س ع'] },
+  'maryam':     { english: ['mary','virgin mary','mother of jesus'], roots: ['م ر ي'] },
+  'adam':       { english: ['adam','first human','first man'], roots: ['ا د م'] },
+  'hawwa':      { english: ['eve','adam wife'], roots: ['ح و ي'] },
+  'luqman':     { english: ['luqman','wise man'], roots: ['ل ق م'] },
+  'dhulqarnayn':{ english: ['dhul qarnayn','alexander','great king'], roots: ['ق ر ن'] },
+  'asiya':      { english: ['asiya','wife of pharaoh'], roots: ['ا س ي'] },
 
-  // ── Names / attributes of Allah ───────────────────────────────────────────
-  'rahman':    { english: ['most merciful','merciful','compassionate'], roots: ['ر ح م'] },
-  'raheem':    { english: ['most merciful','merciful'], roots: ['ر ح م'] },
-  'rahim':     { english: ['merciful','compassionate'], roots: ['ر ح م'] },
-  'ghafur':    { english: ['forgiving','oft-forgiving','pardoning'], roots: ['غ ف ر'] },
-  'ghaffar':   { english: ['most forgiving','pardoning'], roots: ['غ ف ر'] },
-  'hakeem':    { english: ['wise','all-wise'], roots: ['ح ك م'] },
-  'aleem':     { english: ['all-knowing','knowing','omniscient'], roots: ['ع ل م'] },
-  'qadeer':    { english: ['powerful','all-powerful','capable'], roots: ['ق د ر'] },
-  'aziz':      { english: ['mighty','honorable','exalted'], roots: ['ع ز ز'] },
-  'karim':     { english: ['generous','noble','bountiful'], roots: ['ك ر م'] },
-  'salam':     { english: ['peace','source of peace'], roots: ['س ل م'] },
-  'tawwab':    { english: ['acceptor of repentance','forgiving','turns mercy'], roots: ['ت و ب'] },
-  'wakeel':    { english: ['trustee','guardian','disposer affairs'], roots: ['و ك ل'] },
-  'wahhab':    { english: ['bestower','giver','grantor'], roots: ['و ه ب'] },
+  // ── Companions & figures ──────────────────────────────────────────────────
+  'abu bakr':   { english: ['companion','truthful','caliph','siddiq'], roots: ['ص د ق'] },
+  'umar':       { english: ['companion','second caliph','just'], roots: ['ع م ر'] },
+  'uthman':     { english: ['companion','third caliph'], roots: ['ع ث م'] },
+  'ali':        { english: ['companion','fourth caliph','cousin prophet'], roots: ['ع ل و'] },
 
-  // ── Concepts / phrases ────────────────────────────────────────────────────
-  'ummah':     { english: ['community','nation','muslim community','people'], roots: ['ا م م'] },
-  'ahl':       { english: ['people','family','household','folk'], roots: ['ا ه ل'] },
-  'sunnah':    { english: ['tradition','way','practice','custom'], roots: ['س ن ن'] },
-  'sirat':     { english: ['path','way','road','straight path'], roots: ['س ر ط'] },
-  'siratal mustaqeem': { english: ['straight path','right path','correct way'], roots: ['س ر ط','ق و م'] },
-  'amanah':    { english: ['trust','trustworthiness','responsibility','duty'], roots: ['ا م ن'] },
-  'adl':       { english: ['justice','fairness','equity','fair'], roots: ['ع د ل'] },
-  'haq':       { english: ['truth','right','just','correct','true'], roots: ['ح ق ق'] },
-  'hikmah':    { english: ['wisdom','knowledge','understanding'], roots: ['ح ك م'] },
-  'ilm':       { english: ['knowledge','learn','scholar'], roots: ['ع ل م'] },
-  'rahmah':    { english: ['mercy','compassion','blessing'], roots: ['ر ح م'] },
-  'ni\'mah':   { english: ['blessing','bounty','favor','grace'], roots: ['ن ع م'] },
-  'nimah':     { english: ['blessing','bounty','favor'], roots: ['ن ع م'] },
-  'nimat':     { english: ['blessing','bounty'], roots: ['ن ع م'] },
-  'azab':      { english: ['punishment','torment','suffering','pain'], roots: ['ع ذ ب'] },
-  'adab':      { english: ['punishment','torment'], roots: ['ع ذ ب'] },
-  'ghufraan':  { english: ['forgiveness','pardon','forgive'], roots: ['غ ف ر'] },
-  'nafaq':     { english: ['spending','charity','provision'], roots: ['ن ف ق'] },
-  'sadaqah':   { english: ['charity','alms','give','donation'], roots: ['ص د ق'] },
-  'sadaqa':    { english: ['charity','donation'], roots: ['ص د ق'] },
-  'khilafah':  { english: ['vicegerency','stewardship','successor','khalifah'], roots: ['خ ل ف'] },
-  'khalifah':  { english: ['vicegerent','successor','caliph'], roots: ['خ ل ف'] },
-  'akhlaaq':   { english: ['character','morality','ethics','conduct'], roots: ['خ ل ق'] },
+  // ── Names of Allah ────────────────────────────────────────────────────────
+  'rahman':     { english: ['most merciful','merciful','compassionate'], roots: ['ر ح م'] },
+  'raheem':     { english: ['most merciful','merciful'], roots: ['ر ح م'] },
+  'rahim':      { english: ['merciful','compassionate'], roots: ['ر ح م'] },
+  'ghafur':     { english: ['forgiving','oft-forgiving'], roots: ['غ ف ر'] },
+  'ghaffar':    { english: ['most forgiving','pardoning'], roots: ['غ ف ر'] },
+  'hakeem':     { english: ['wise','all-wise'], roots: ['ح ك م'] },
+  'aleem':      { english: ['all-knowing','knowing','omniscient'], roots: ['ع ل م'] },
+  'qadeer':     { english: ['powerful','all-powerful'], roots: ['ق د ر'] },
+  'aziz':       { english: ['mighty','honorable','exalted'], roots: ['ع ز ز'] },
+  'karim':      { english: ['generous','noble','bountiful'], roots: ['ك ر م'] },
+  'haleem':     { english: ['forbearing','clement'], roots: ['ح ل م'] },
+  'tawwab':     { english: ['acceptor of repentance','forgiving'], roots: ['ت و ب'] },
+  'wakeel':     { english: ['trustee','guardian','disposer'], roots: ['و ك ل'] },
+  'wahhab':     { english: ['bestower','giver','grantor'], roots: ['و ه ب'] },
+  'razzaq':     { english: ['provider','sustainer','bestower'], roots: ['ر ز ق'] },
+  'fattah':     { english: ['opener','judge','victory'], roots: ['ف ت ح'] },
+  'baseer':     { english: ['all-seeing','seeing'], roots: ['ب ص ر'] },
+  'samee':      { english: ['all-hearing','hearing'], roots: ['س م ع'] },
+  'malik':      { english: ['king','master','owner'], roots: ['م ل ك'] },
+  'quddus':     { english: ['holy','pure','sanctified'], roots: ['ق د س'] },
+  'mumin':      { english: ['granter of security','faithful'], roots: ['ا م ن'] },
+  'jabbar':     { english: ['compeller','omnipotent'], roots: ['ج ب ر'] },
+  'mutakabbir': { english: ['supreme','majestic'], roots: ['ك ب ر'] },
+  'musawwir':   { english: ['fashioner','shaper of forms'], roots: ['ص و ر'] },
+
+  // ── Social concepts ───────────────────────────────────────────────────────
+  'ummah':      { english: ['community','nation','muslim community','people'], roots: ['ا م م'] },
+  'ahl':        { english: ['people','family','household'], roots: ['ا ه ل'] },
+  'sunnah':     { english: ['tradition','way','practice','custom'], roots: ['س ن ن'] },
+  'sirat':      { english: ['path','way','road','straight path'], roots: ['س ر ط'] },
+  'siratal mustaqeem': { english: ['straight path','right way'], roots: ['س ر ط','ق و م'] },
+  'amanah':     { english: ['trust','trustworthiness','responsibility'], roots: ['ا م ن'] },
+  'adl':        { english: ['justice','fairness','equity'], roots: ['ع د ل'] },
+  'haq':        { english: ['truth','right','just','correct'], roots: ['ح ق ق'] },
+  'hikmah':     { english: ['wisdom','knowledge','understanding'], roots: ['ح ك م'] },
+  'ilm':        { english: ['knowledge','learn','scholar'], roots: ['ع ل م'] },
+  'rahmah':     { english: ['mercy','compassion','blessing'], roots: ['ر ح م'] },
+  'nimah':      { english: ['blessing','bounty','favor','grace'], roots: ['ن ع م'] },
+  'nimat':      { english: ['blessing','bounty'], roots: ['ن ع م'] },
+  'azab':       { english: ['punishment','torment','suffering'], roots: ['ع ذ ب'] },
+  'ghufraan':   { english: ['forgiveness','pardon'], roots: ['غ ف ر'] },
+  'sadaqah':    { english: ['charity','alms','donation'], roots: ['ص د ق'] },
+  'sadaqa':     { english: ['charity','donation'], roots: ['ص د ق'] },
+  'khilafah':   { english: ['vicegerency','stewardship','successor'], roots: ['خ ل ف'] },
+  'khalifah':   { english: ['vicegerent','successor','caliph'], roots: ['خ ل ف'] },
+  'akhlaaq':    { english: ['character','morality','ethics','conduct'], roots: ['خ ل ق'] },
+  'amr':        { english: ['command','order','matter','affair'], roots: ['ا م ر'] },
+  'nahy':       { english: ['prohibition','forbid','stop'], roots: ['ن ه ي'] },
+  'shura':      { english: ['consultation','counsel','mutual advice'], roots: ['ش و ر'] },
+  'dawah':      { english: ['call to islam','invitation','preaching'], roots: ['د ع و'] },
+  'tabligh':    { english: ['convey','preach','deliver message'], roots: ['ب ل غ'] },
+  'jihad':      { english: ['strive','striving','effort','struggle'], roots: ['ج ه د'] },
+  'ghaneemah':  { english: ['war booty','spoils of war'], roots: ['غ ن م'] },
+  'hijaab':     { english: ['veil','covering','screen','barrier'], roots: ['ح ج ب'] },
+  'hijab':      { english: ['veil','covering','barrier'], roots: ['ح ج ب'] },
+  'pardah':     { english: ['veil','covering','modesty'], roots: ['ح ج ب'] },
+  'awrah':      { english: ['modesty','private parts','covering'], roots: ['ع و ر'] },
+  'israf':      { english: ['extravagance','waste','excess'], roots: ['س ر ف'] },
+  'qanaat':     { english: ['contentment','sufficiency'], roots: ['ق ن ع'] },
+  'tawadu':     { english: ['humility','humble'], roots: ['و ض ع'] },
+  'karamah':    { english: ['honor','dignity','nobility'], roots: ['ك ر م'] },
+  'izzah':      { english: ['honor','dignity','power','might'], roots: ['ع ز ز'] },
+
+  // ── Quranic places ────────────────────────────────────────────────────────
+  'makkah':     { english: ['mecca','holy city','kaaba'], roots: ['م ك ك'] },
+  'mecca':      { english: ['mecca','holy city'], roots: ['م ك ك'] },
+  'madinah':    { english: ['medina','city of prophet'], roots: ['م د ن'] },
+  'masjid':     { english: ['mosque','place of worship','prostration'], roots: ['س ج د'] },
+  'kaaba':      { english: ['kaaba','sacred house','holy house'], roots: ['ك ع ب'] },
+  'bayt':       { english: ['house','sacred house','home'], roots: ['ب ي ت'] },
+  'baytullah':  { english: ['house of allah','sacred house'], roots: ['ب ي ت'] },
+  'arafah':     { english: ['arafat','pilgrimage','standing'], roots: ['ع ر ف'] },
+  'safa':       { english: ['safa','marwa','pilgrimage'], roots: ['ص ف و'] },
+  'marwa':      { english: ['marwa','safa','pilgrimage'], roots: ['م ر و'] },
+  'egypt':      { english: ['egypt','pharaoh','land of pharaoh'], roots: ['م ص ر'] },
+  'misr':       { english: ['egypt','land'], roots: ['م ص ر'] },
+  'sham':       { english: ['syria','levant','blessed land'], roots: ['ش ا م'] },
+  'tur':        { english: ['mount sinai','mount tur','moses'], roots: ['ط و ر'] },
+  'sinai':      { english: ['mount sinai','sinai','moses'], roots: ['ط و ر'] },
 };
 
 /**
- * Addressees: groups that Allah directly addresses with a vocative (يَا ...).
- * ar_patterns: normalized Arabic substrings (no diacritics, alef-normalized).
+ * Addressees — groups that Allah directly addresses with a vocative.
  */
 const ADDRESSEES = [
   {
@@ -264,7 +363,7 @@ const ADDRESSEES = [
     label: 'Believers (يَا أَيُّهَا الَّذِينَ آمَنُوا)',
     keywords: [
       'believer','believers','believe','faithful','muslims','who have believed',
-      'those who believe','those who believed','o you who believe',
+      'those who believe','those who believed','o you who believe','o believers',
     ],
     ar_patterns: ['يايها الذين امنوا'],
     description: 'Ayaat where Allah addresses the believers with يَا أَيُّهَا الَّذِينَ آمَنُوا',
@@ -274,7 +373,7 @@ const ADDRESSEES = [
     label: 'Mankind (يَا أَيُّهَا النَّاسُ)',
     keywords: [
       'mankind','humans','humanity','people','human beings','o people',
-      'o mankind','o humanity','all people',
+      'o mankind','o humanity','all people','all humans',
     ],
     ar_patterns: ['يايها الناس'],
     description: 'Ayaat where Allah addresses all of humanity with يَا أَيُّهَا النَّاسُ',
@@ -284,7 +383,7 @@ const ADDRESSEES = [
     label: 'Disbelievers (يَا أَيُّهَا الْكَافِرُونَ)',
     keywords: [
       'disbeliever','disbelievers','unbeliever','unbelievers','kafir','kuffar',
-      'non believer','non-believer','non believers','non-believers','infidel','infidels',
+      'non believer','non-believer','non believers','non-believers','infidel',
     ],
     ar_patterns: ['يايها الكفرون','الذين كفروا'],
     description: 'Ayaat where Allah addresses disbelievers',
@@ -293,8 +392,7 @@ const ADDRESSEES = [
     id: 'prophet',
     label: 'The Prophet (يَا أَيُّهَا النَّبِيُّ)',
     keywords: [
-      'prophet','messenger','muhammad','o prophet','o messenger',
-      'o you the prophet','address prophet',
+      'prophet','messenger','muhammad','o prophet','o messenger','address prophet',
     ],
     ar_patterns: ['يايها النبي','يايها الرسول'],
     description: 'Ayaat where Allah directly addresses the Prophet ﷺ',
@@ -307,7 +405,7 @@ const ADDRESSEES = [
       'jews','christians','o people of the book','scripture people',
     ],
     ar_patterns: ['ياهل الكتب'],
-    description: 'Ayaat addressing the Jews and Christians (People of Scripture)',
+    description: 'Ayaat addressing Jews and Christians (People of Scripture)',
   },
   {
     id: 'children_of_adam',
@@ -329,49 +427,66 @@ const ADDRESSEES = [
     ar_patterns: ['يبني اسريل'],
     description: 'Ayaat addressing the Children of Israel',
   },
+  {
+    id: 'hypocrites',
+    label: 'Hypocrites (الْمُنَافِقُونَ)',
+    keywords: [
+      'hypocrite','hypocrites','munafiqoon','munafiqin','munafiq',
+      'two-faced','nifaq','insincere',
+    ],
+    ar_patterns: ['المنفقون','المنفقين'],
+    description: 'Ayaat about or addressing hypocrites',
+  },
 ];
 
 /**
- * Topic concepts: thematic search domains with English keywords and Arabic roots.
+ * Topic concepts — thematic search domains with English keywords and Arabic roots.
  */
 const TOPICS = [
-  // ── Worship & Pillars ──────────────────────────────────────────────────────
+  // ── Worship & Pillars ─────────────────────────────────────────────────────
   {
     id: 'prayer',
     label: 'Prayer (الصلاة)',
     keywords: [
       'prayer','pray','salah','salat','namaz','worship','prostrate','prostration',
       'bow','bowing','establish prayer','five prayers','friday prayer','jumuah',
+      'call to prayer','adhan','iqamah','congregation',
     ],
-    roots: ['ص ل و','ع ب د','س ج د','ر ك ع'],
+    roots: ['ص ل و','ع ب د','س ج د','ر ك ع','ق و م'],
   },
   {
     id: 'fasting',
     label: 'Fasting (الصيام)',
-    keywords: ['fast','fasting','sawm','siyam','soom','roza','ramadan','abstain from food','iftar','suhoor'],
+    keywords: [
+      'fast','fasting','sawm','siyam','soom','roza','ramadan',
+      'abstain','iftar','suhoor','month of ramadan',
+    ],
     roots: ['ص و م'],
   },
   {
     id: 'charity',
     label: 'Charity & Zakah (الزكاة والصدقة)',
     keywords: [
-      'charity','zakat','zakah','alms','sadaqah','sadaqa','spend in the way of allah',
-      'give to the poor','poor due','almsgiving','infaq','nafaq',
+      'charity','zakat','zakah','alms','sadaqah','spend in the way of allah',
+      'give to the poor','poor due','almsgiving','infaq','nafaq','donation',
     ],
     roots: ['ز ك و','ص د ق','ن ف ق'],
   },
   {
     id: 'pilgrimage',
     label: 'Pilgrimage (الحج)',
-    keywords: ['pilgrimage','hajj','umrah','kaaba','mecca','ihram','tawaf','arafat','sacrifice'],
+    keywords: [
+      'pilgrimage','hajj','umrah','kaaba','mecca','ihram','tawaf',
+      'arafat','sacrifice','sacred mosque',
+    ],
     roots: ['ح ج ج','ط و ف'],
   },
   {
     id: 'purification',
     label: 'Purification (الطهارة)',
     keywords: [
-      'purification','purity','pure','clean','ablution','wudu','ghusl','tayammum',
-      'ritual bath','wash','unclean','impure','najis',
+      'purification','purity','pure','clean','ablution','wudu','ghusl',
+      'tayammum','ritual bath','wash','unclean','impure',
     ],
     roots: ['ط ه ر','غ س ل','و ض ا'],
   },
@@ -380,7 +495,7 @@ const TOPICS = [
     label: 'Supplication (الدعاء)',
     keywords: [
       'supplication','dua','invoke','invocation','call upon','ask allah',
-      'pray to allah','beg allah','implore','plead',
+      'pray to allah','beg allah','implore','plead','request from allah',
     ],
     roots: ['د ع و'],
   },
@@ -389,7 +504,7 @@ const TOPICS = [
     label: 'Remembrance of Allah (الذكر)',
     keywords: [
       'remembrance','remember allah','dhikr','zikr','mention allah',
-      'glorify','praise allah','glorification','tasbih',
+      'glorify','praise allah','tasbih','glorification',
     ],
     roots: ['ذ ك ر','س ب ح','ح م د'],
   },
@@ -400,7 +515,7 @@ const TOPICS = [
     label: 'Monotheism (التوحيد)',
     keywords: [
       'monotheism','oneness','one god','only god','tawheed','tauhid',
-      'associating partners','no deity except','lailahaillallah','none worthy of worship',
+      'no deity except','lailahaillallah','none worthy of worship',
     ],
     roots: ['و ح د','ش ر ك','ا ل ه'],
   },
@@ -409,7 +524,7 @@ const TOPICS = [
     label: 'God-Consciousness (التقوى)',
     keywords: [
       'taqwa','piety','righteous','god-fearing','god-consciousness',
-      'fear allah','fear of allah','devout','righteous deeds',
+      'fear allah','fear of allah','devout','righteousness',
     ],
     roots: ['و ق ي','ص ل ح'],
   },
@@ -427,7 +542,7 @@ const TOPICS = [
     label: 'Angels (الملائكة)',
     keywords: [
       'angels','angel','malaika','jibreel','gabriel','mikail','michael',
-      'israfil','izrail','angel of death','heavenly beings',
+      'angel of death','heavenly beings','messenger angel',
     ],
     roots: ['م ل ك','ج ب ر'],
   },
@@ -435,8 +550,8 @@ const TOPICS = [
     id: 'divine_books',
     label: 'Divine Books (الكتب السماوية)',
     keywords: [
-      'divine books','quran','torah','tawrat','gospel','injeel','zabur','psalms',
-      'scripture','revelation','holy book','sent down book',
+      'divine books','torah','tawrat','gospel','injeel','zabur','psalms',
+      'scripture','revelation','holy book','sent down book','furqan',
     ],
     roots: ['ك ت ب','و ح ي','ن ز ل'],
   },
@@ -455,7 +570,7 @@ const TOPICS = [
     label: 'Divine Decree (القدر)',
     keywords: [
       'divine decree','predestination','qadr','qadar','taqdeer','destiny',
-      'fate','written','what allah wills','will of allah','appointed time','ajal',
+      'fate','written','what allah wills','will of allah','appointed time',
     ],
     roots: ['ق د ر','ق ض ي','ا ج ل'],
   },
@@ -466,7 +581,7 @@ const TOPICS = [
     label: 'Day of Judgment (يوم القيامة)',
     keywords: [
       'judgment','day of judgment','resurrection','qiyamah','last day',
-      'reckoning','account','deeds weighed','final hour','hour',
+      'reckoning','account','deeds weighed','final hour','hour','day of recompense',
     ],
     roots: ['ق و م','ح س ب','ع ر ض','م ي ز'],
   },
@@ -474,8 +589,8 @@ const TOPICS = [
     id: 'paradise',
     label: 'Paradise (الجنة)',
     keywords: [
-      'paradise','heaven','jannah','garden','gardens of eden','bliss',
-      'hereafter reward','eternal life','everlasting life','rivers beneath',
+      'paradise','heaven','jannah','garden','bliss','hereafter reward',
+      'eternal life','everlasting life','rivers beneath','gardens of eden',
     ],
     roots: ['ج ن ن','ف ر د س','خ ل د'],
   },
@@ -484,7 +599,7 @@ const TOPICS = [
     label: 'Hellfire (النار / جهنم)',
     keywords: [
       'hell','hellfire','fire','jahannam','torment','punishment','blazing fire',
-      'wrath','doom','eternal punishment','naar','burn','gehenna',
+      'wrath','doom','eternal punishment','naar','burn','hellfire punishment',
     ],
     roots: ['ن ا ر','ج ح م','س ع ر','ع ذ ب'],
   },
@@ -492,7 +607,7 @@ const TOPICS = [
     id: 'resurrection',
     label: 'Resurrection (البعث)',
     keywords: [
-      'resurrection','raised','rise again','life after death','second life',
+      'resurrection','raised','rise again','life after death',
       'hereafter','akhirah','afterlife','barzakh','gathering','hashr',
     ],
     roots: ['ب ع ث','ن ش ر','ح ش ر'],
@@ -501,8 +616,7 @@ const TOPICS = [
     id: 'intercession',
     label: 'Intercession (الشفاعة)',
     keywords: [
-      'intercession','intercede','shafaa','intercession on day of judgment',
-      'pleading','advocate','no intercession except',
+      'intercession','intercede','shafaa','pleading','advocate','no intercession',
     ],
     roots: ['ش ف ع'],
   },
@@ -511,7 +625,7 @@ const TOPICS = [
     label: 'Scales of Deeds (الميزان)',
     keywords: [
       'scales','balance','weigh deeds','mizan','good deeds','bad deeds',
-      'deeds recorded','book of deeds','record','righteous deeds rewarded',
+      'deeds recorded','book of deeds','record of deeds',
     ],
     roots: ['و ز ن','ح س ب','ك ت ب'],
   },
@@ -522,7 +636,7 @@ const TOPICS = [
     label: 'Mercy & Forgiveness (الرحمة والمغفرة)',
     keywords: [
       'mercy','compassion','merciful','compassionate','rahman','raheem','rahim',
-      'forgiveness','forgive','pardon','forgiven','gracious','kind','blessing','rahmah',
+      'forgiveness','forgive','pardon','forgiven','gracious','kind','rahmah',
     ],
     roots: ['ر ح م','غ ف ر','ع ف و','ت و ب'],
   },
@@ -531,7 +645,7 @@ const TOPICS = [
     label: 'Patience (الصبر)',
     keywords: [
       'patience','patient','perseverance','endure','sabr','steadfast',
-      'forbearance','bear with patience','endurance',
+      'forbearance','bear with patience','endurance','withstand',
     ],
     roots: ['ص ب ر'],
   },
@@ -549,7 +663,7 @@ const TOPICS = [
     label: 'Justice & Equity (العدل)',
     keywords: [
       'justice','just','fairness','equity','adl','be fair','deal justly',
-      'establish justice','witness justly','judge fairly',
+      'establish justice','witness justly','judge fairly','equal','balance',
     ],
     roots: ['ع د ل','ق س ط'],
   },
@@ -558,7 +672,7 @@ const TOPICS = [
     label: 'Truth & Honesty (الحق)',
     keywords: [
       'truth','true','honest','honesty','truthful','haq','speak truth',
-      'truthfulness','sincere','sincerity','ikhlas',
+      'truthfulness','sincere','sincerity',
     ],
     roots: ['ح ق ق','ص د ق','خ ل ص'],
   },
@@ -576,9 +690,27 @@ const TOPICS = [
     label: 'Humility (التواضع)',
     keywords: [
       'humility','humble','modest','lowly','meek','not arrogant',
-      'bow in humility','soften heart',
+      'bow in humility','soften heart','submissive',
     ],
     roots: ['خ ض ع','و ض ع','ذ ل ل'],
+  },
+  {
+    id: 'love',
+    label: 'Love (المحبة)',
+    keywords: [
+      'love','loves','beloved','affection','love of allah','love for allah',
+      'loving','dear to allah','allah loves',
+    ],
+    roots: ['ح ب ب','و د د'],
+  },
+  {
+    id: 'hope',
+    label: 'Hope & Fear (الرجاء والخوف)',
+    keywords: [
+      'hope','hope in allah','fear allah','hope and fear',
+      'aspire','long for','yearn','desire mercy',
+    ],
+    roots: ['ر ج و','خ و ف','ا م ل'],
   },
 
   // ── Vices ─────────────────────────────────────────────────────────────────
@@ -586,8 +718,8 @@ const TOPICS = [
     id: 'arrogance',
     label: 'Arrogance & Pride (الكبر)',
     keywords: [
-      'arrogance','arrogant','pride','proud','haughty','kibr','kibr',
-      'self-conceited','boastful','vain',
+      'arrogance','arrogant','pride','proud','haughty','kibr',
+      'self-conceited','boastful','vain','contemptuous',
     ],
     roots: ['ك ب ر','ف خ ر','ع ج ب'],
   },
@@ -595,8 +727,8 @@ const TOPICS = [
     id: 'hypocrisy',
     label: 'Hypocrisy (النفاق)',
     keywords: [
-      'hypocrisy','hypocrite','hypocrites','munafiq','munafiqoon','two-faced',
-      'nifaq','showing off','riya','dissimulation',
+      'hypocrisy','hypocrite','hypocrites','munafiq','munafiqoon',
+      'nifaq','showing off','riya','dissimulation','two-faced',
     ],
     roots: ['ن ف ق','ر ا ي'],
   },
@@ -605,7 +737,7 @@ const TOPICS = [
     label: 'Polytheism & Shirk (الشرك)',
     keywords: [
       'shirk','polytheism','idolatry','associate partners','idol','idols',
-      'partners with allah','mushrik','mushrikoon','worship others',
+      'partners with allah','mushrik','mushrikoon','worship others beside allah',
     ],
     roots: ['ش ر ك','و ث ن','ص ن م'],
   },
@@ -614,7 +746,7 @@ const TOPICS = [
     label: 'Injustice & Oppression (الظلم)',
     keywords: [
       'injustice','oppression','wrong','wrongdoer','zulm','transgress','transgressor',
-      'oppress','oppressor','persecute','harm others',
+      'oppress','oppressor','persecute','harm others','tyrant',
     ],
     roots: ['ظ ل م','ب غ ي','ع د و'],
   },
@@ -622,8 +754,8 @@ const TOPICS = [
     id: 'corruption',
     label: 'Corruption & Mischief (الفساد)',
     keywords: [
-      'corruption','mischief','corrupt','spread corruption','fasad','fasaad',
-      'disorder','evil deeds','spread evil',
+      'corruption','mischief','corrupt','spread corruption','fasad',
+      'disorder','evil deeds','spread evil','mischief in land',
     ],
     roots: ['ف س د'],
   },
@@ -632,9 +764,27 @@ const TOPICS = [
     label: 'Trials & Tribulations (الفتنة والابتلاء)',
     keywords: [
       'trial','tribulation','test','fitnah','fitna','tested','affliction',
-      'hardship','difficulty','suffer','calamity','distress',
+      'hardship','difficulty','suffer','calamity','distress','test of faith',
     ],
     roots: ['ف ت ن','ب ل و','م ح ن'],
+  },
+  {
+    id: 'sin',
+    label: 'Sin & Wrongdoing (الذنب والخطأ)',
+    keywords: [
+      'sin','sins','sinful','wrongdoing','transgression','guilt','evil deed',
+      'bad deeds','error','mistake','immoral','wicked','iniquity',
+    ],
+    roots: ['ذ ن ب','خ ط ا','ا ث م','ف ح ش'],
+  },
+  {
+    id: 'backbiting',
+    label: 'Backbiting & Slander (الغيبة والبهتان)',
+    keywords: [
+      'backbiting','slander','speak ill','gossip','defame','mock',
+      'ridicule','insult','nickname','spy','suspicion',
+    ],
+    roots: ['غ ي ب','ن م م','ب ه ت','س خ ر'],
   },
 
   // ── Family & Social ───────────────────────────────────────────────────────
@@ -648,11 +798,38 @@ const TOPICS = [
     roots: ['ن ك ح','ط ل ق','و ل د','ا م م','ا ب و'],
   },
   {
+    id: 'women',
+    label: 'Women (المرأة)',
+    keywords: [
+      'women','woman','female','wife','wives','mother','daughters','sisters',
+      'modesty','veil','hijab','rights of women','believing women',
+    ],
+    roots: ['ن س و','ا م ر','ح ج ب','م ر ا'],
+  },
+  {
+    id: 'children',
+    label: 'Children & Upbringing (الأطفال والتربية)',
+    keywords: [
+      'children','child','son','daughter','offspring','infant',
+      'upbringing','education of children','rights of children',
+    ],
+    roots: ['و ل د','ب ن و','ر ب ب'],
+  },
+  {
+    id: 'parents',
+    label: 'Parents & Respect (الوالدان)',
+    keywords: [
+      'parents','mother','father','respect parents','honor parents',
+      'obey parents','kindness to parents','good to parents',
+    ],
+    roots: ['و ل د','ا م م','ا ب و','ب ر ر'],
+  },
+  {
     id: 'inheritance',
     label: 'Inheritance (الميراث)',
     keywords: [
-      'inheritance','inherit','estate','mirath','will','bequest','division of property',
-      'share of inheritance','heirs',
+      'inheritance','inherit','estate','mirath','will','bequest',
+      'division of property','share of inheritance','heirs',
     ],
     roots: ['و ر ث','ن ص ب'],
   },
@@ -665,6 +842,15 @@ const TOPICS = [
     ],
     roots: ['ي ت م'],
   },
+  {
+    id: 'neighbors',
+    label: 'Neighbors & Community (الجيران)',
+    keywords: [
+      'neighbor','neighbors','community','near kin','treat kindly',
+      'good relations','brotherhood','sisterhood','unity',
+    ],
+    roots: ['ج و ر','ا خ و','ق ر ب'],
+  },
 
   // ── Finance & Law ─────────────────────────────────────────────────────────
   {
@@ -672,7 +858,7 @@ const TOPICS = [
     label: 'Usury / Interest (الربا)',
     keywords: [
       'usury','interest','riba','sood','unlawful gain','charging interest',
-      'prohibited interest','lend','borrow','debt',
+      'prohibited interest','lend','borrow','debt','loan',
     ],
     roots: ['ر ب و'],
   },
@@ -681,7 +867,7 @@ const TOPICS = [
     label: 'Trade & Commerce (التجارة)',
     keywords: [
       'trade','commerce','business','merchant','buy','sell','market',
-      'tijara','bay','contract','deal','transaction',
+      'tijara','bay','contract','deal','transaction','price',
     ],
     roots: ['ت ج ر','ب ي ع','ع ق د'],
   },
@@ -690,9 +876,18 @@ const TOPICS = [
     label: 'Lawful & Unlawful (الحلال والحرام)',
     keywords: [
       'halal','haram','lawful','unlawful','permissible','forbidden',
-      'allowed','prohibited','permitted','eat what is lawful',
+      'allowed','prohibited','permitted','eat what is lawful','forbidden food',
     ],
     roots: ['ح ل ل','ح ر م'],
+  },
+  {
+    id: 'food',
+    label: 'Food & Drink (الطعام والشراب)',
+    keywords: [
+      'food','eat','drink','lawful food','forbidden food','alcohol',
+      'wine','pork','slaughter','bismillah before eating',
+    ],
+    roots: ['ا ك ل','ش ر ب','ط ع م','ذ ب ح'],
   },
   {
     id: 'hudood',
@@ -703,6 +898,15 @@ const TOPICS = [
     ],
     roots: ['ح د د','ق ص ص'],
   },
+  {
+    id: 'contract',
+    label: 'Contracts & Agreements (العقود)',
+    keywords: [
+      'contract','agreement','covenant','promise','oath','fulfill promise',
+      'keep covenant','witnesses','documentation','write down',
+    ],
+    roots: ['ع ق د','ع ه د','و ع د','ك ت ب'],
+  },
 
   // ── Knowledge & Guidance ──────────────────────────────────────────────────
   {
@@ -710,9 +914,9 @@ const TOPICS = [
     label: 'Knowledge & Wisdom (العلم والحكمة)',
     keywords: [
       'knowledge','knowing','wise','wisdom','aware','all knowing','omniscient',
-      'learn','teach','inform','understand','ilm','hikmah','scholar',
+      'learn','teach','inform','understand','ilm','hikmah','scholar','intellect',
     ],
-    roots: ['ع ل م','ح ك م','خ ب ر','ف ق ه'],
+    roots: ['ع ل م','ح ك م','خ ب ر','ف ق ه','ع ق ل'],
   },
   {
     id: 'guidance',
@@ -728,9 +932,18 @@ const TOPICS = [
     label: 'Light (النور)',
     keywords: [
       'light','noor','nur','divine light','luminous','enlighten',
-      'light of allah','bring from darkness to light',
+      'light of allah','bring from darkness to light','illuminate',
     ],
     roots: ['ن و ر'],
+  },
+  {
+    id: 'reading',
+    label: 'Reading & Learning (القراءة والتعلم)',
+    keywords: [
+      'read','recite','quran recitation','reading','learn','study',
+      'teach','pen','write','knowledge seeking',
+    ],
+    roots: ['ق ر ا','ع ل م','ق ل م','ك ت ب'],
   },
 
   // ── Creation & Nature ─────────────────────────────────────────────────────
@@ -749,15 +962,16 @@ const TOPICS = [
     keywords: [
       'signs','sign of allah','sun','moon','stars','rain','water','sky',
       'rivers','mountains','plants','animals','bees','honey','night','day',
+      'seasons','wind','clouds','thunderbolt','lightning',
     ],
-    roots: ['ش م س','ق م ر','م ط ر','ج ب ل','ن ج م'],
+    roots: ['ش م س','ق م ر','م ط ر','ج ب ل','ن ج م','ب ح ر'],
   },
   {
     id: 'provision',
     label: 'Provision & Sustenance (الرزق)',
     keywords: [
       'provision','sustenance','livelihood','rizq','bounty','provide',
-      'nourishment','food','bestow','grant provision',
+      'nourishment','food','bestow','grant provision','sustainer',
     ],
     roots: ['ر ز ق'],
   },
@@ -766,9 +980,17 @@ const TOPICS = [
     label: 'Death & Soul (الموت والروح)',
     keywords: [
       'death','die','soul','ruh','spirit','take soul','moment of death',
-      'appointed time','ajal','angel of death','life and death',
+      'appointed time','ajal','angel of death','life and death','dying',
     ],
     roots: ['م و ت','ر و ح','ا ج ل'],
+  },
+  {
+    id: 'time',
+    label: 'Time (الزمان)',
+    keywords: [
+      'time','age','era','epoch','eon','century','era','asr','time by',
+    ],
+    roots: ['ع ص ر','ز م ن','د ه ر','و ق ت'],
   },
 
   // ── Stories & History ─────────────────────────────────────────────────────
@@ -777,7 +999,7 @@ const TOPICS = [
     label: 'Stories of Prophets (قصص الأنبياء)',
     keywords: [
       'story','stories','narrative','tale','history','what happened to',
-      'incident','prophet story','event','nation','destroyed nation',
+      'incident','prophet story','event','nation','destroyed nation','account',
     ],
     roots: ['ق ص ص','ن ب و'],
   },
@@ -786,16 +1008,16 @@ const TOPICS = [
     label: 'Pharaoh & Egypt (فرعون)',
     keywords: [
       'pharaoh','firaun','firawn','egypt','musa and pharaoh',
-      'oppressor','tyrant','drowned','exodus',
+      'oppressor','tyrant','drowned','exodus','plagues',
     ],
     roots: ['ف ر ع','م ص ر'],
   },
   {
     id: 'destroyed_nations',
-    label: "Destroyed Nations (الأمم الهالكة)",
+    label: 'Destroyed Nations (الأمم الهالكة)',
     keywords: [
       'destroyed nation','aad','thamud','sodom','people of lut','ad',
-      'punishment nations','previous nations','examples','lesson',
+      'punishment nations','previous nations','examples','lesson from history',
     ],
     roots: ['ع و د','ث م د','ه ل ك'],
   },
@@ -806,7 +1028,7 @@ const TOPICS = [
     label: 'Heart & Soul (القلب والنفس)',
     keywords: [
       'heart','qalb','soul','nafs','inner self','spiritual heart','hard heart',
-      'soft heart','disease in heart','purify soul','tranquility',
+      'soft heart','disease in heart','purify soul','tranquility','peace of heart',
     ],
     roots: ['ق ل ب','ن ف س','ر و ح'],
   },
@@ -824,7 +1046,7 @@ const TOPICS = [
     label: 'Satan & Evil (الشيطان)',
     keywords: [
       'satan','devil','iblis','shaytan','shaitan','enemy of adam','cursed',
-      'evil whisper','waswas','footsteps of satan',
+      'evil whisper','waswas','footsteps of satan','tricks of satan',
     ],
     roots: ['ش ي ط','ب ل س'],
   },
@@ -839,7 +1061,7 @@ const TOPICS = [
   },
   {
     id: 'names_of_allah',
-    label: "Names & Attributes of Allah (أسماء الله)",
+    label: "Names & Attributes of Allah (أسماء الله الحسنى)",
     keywords: [
       'names of allah','attributes of allah','asma ul husna','most beautiful names',
       'rahman','raheem','malik','quddus','salam','al aziz','al hakeem',
@@ -867,71 +1089,101 @@ const TOPICS = [
     ],
     roots: ['ج ه د','ق ت ل','س ب ل'],
   },
+  {
+    id: 'peace',
+    label: 'Peace & Security (السلام والأمان)',
+    keywords: [
+      'peace','peaceful','salam','security','safety','tranquility',
+      'reconcile','truce','cease conflict','harmony',
+    ],
+    roots: ['س ل م','ا م ن'],
+  },
+
+  // ── Ethics & Character ────────────────────────────────────────────────────
+  {
+    id: 'good_character',
+    label: 'Good Character (حسن الخلق)',
+    keywords: [
+      'good character','morality','ethics','conduct','good manners',
+      'kind','gentle','generous','courteous','noble character',
+    ],
+    roots: ['خ ل ق','ح س ن','ك ر م'],
+  },
+  {
+    id: 'brotherhood',
+    label: 'Brotherhood & Unity (الأخوة والوحدة)',
+    keywords: [
+      'brotherhood','sisterhood','unity','brothers in faith','reconcile','bond',
+      'ummah unity','hold fast to rope of allah','together','community',
+    ],
+    roots: ['ا خ و','ج م ع','و ح د'],
+  },
+  {
+    id: 'environment',
+    label: 'Environment & Earth (البيئة والأرض)',
+    keywords: [
+      'earth','land','environment','do not corrupt','preserve','stewardship',
+      'spread mischief on earth','caretaker','nature','ecosystem',
+    ],
+    roots: ['ا ر ض','ف س د','خ ل ف'],
+  },
 ];
 
 /**
- * Intent detection: what the user wants to do with the results.
- * Maps intent names to trigger phrases.
+ * Intent detection — what the user wants to do with the results.
  */
 const INTENTS = {
-  address:   ['address','addressed','call','called','say to','said to','speak to',
-               'term','phrase','expression','vocative','greeting','how does allah address',
-               'how does god address','what term','what word','what phrase','how addressed'],
-  command:   ['command','commanded','order','instruction','obligatory','must','prescribed',
-               'duty','what are we ordered','told to','required to'],
-  forbid:    ['forbid','forbidden','prohibited','haram','not allowed','must not',
-               'avoid','prohibited from'],
-  reward:    ['reward','promise','good news','promised','paradise for','heaven for',
-               'what reward'],
-  warn:      ['warn','warning','threat','consequence','punishment for','result of',
-               'what happens if'],
-  count:     ['how many','how many times','how often','count','frequency','number of times',
-               'occurs','appear','appears'],
-  story:     ['story','stories','narrative','tale','history','what happened to',
-               'incident','event'],
+  address:  ['address','addressed','call','called','say to','speak to',
+              'term','phrase','expression','vocative','how does allah address',
+              'how does god address','what term','what word','what phrase','how addressed'],
+  command:  ['command','commanded','order','instruction','obligatory','must','prescribed',
+              'duty','what are we ordered','told to','required to','mandatory'],
+  forbid:   ['forbid','forbidden','prohibited','haram','not allowed','must not',
+              'avoid','what is prohibited','what is not allowed'],
+  reward:   ['reward','promise','good news','promised','paradise for','heaven for',
+              'what reward','what is promised','what is the reward'],
+  warn:     ['warn','warning','threat','consequence','punishment for','result of',
+              'what happens if','what is the punishment','what does allah warn'],
+  count:    ['how many','how many times','how often','count','frequency','number of times',
+              'occurs','appear','appears','mentioned how many'],
+  story:    ['story','stories','narrative','tale','history','what happened to',
+              'incident','event','account of'],
 };
 
 /**
- * Normalize Arabic text for fuzzy matching.
- * Removes diacritics, Quranic annotation marks, normalizes alef/hamza variants.
- * Applied identically to both stored text and search patterns.
+ * Normalize Arabic text — mirrors the Python normalize_arabic() for consistent matching.
  */
 function normalizeArabic(text) {
   if (!text) return '';
   return text
-    .replace(/[ؐ-ًؚ-ٰٟ]/g, '')  // tashkeel + superscript alef
-    .replace(/[ۖ-ۭ]/g, '')                       // Quranic annotation marks
-    .replace(/[؀-؏]/g, '')                       // Arabic number/sign chars
-    .replace(/[أإآٱ]/g, 'ا')     // normalize alef variants -> alef
-    .replace(/ء/g, '')                                 // remove standalone hamza
-    .replace(/ى/g, 'ي')                         // alef maqsura -> ya
-    .replace(/ة/g, 'ه')                         // ta marbuta -> ha
+    .replace(/[ؐ-ًؚ-ٰۖ-ۜ۟-۪ۤۧۨ-ۭݿ]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ء/g, '')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 /**
- * Parse a natural-language English query into a structured search request.
- * Returns: { keywords, arabicPatterns, roots, intents, addresseeIds, topicIds }
+ * Parse a natural-language query into a structured search request.
  */
 function parseQuery(rawQuery) {
   const q = rawQuery.toLowerCase();
 
   const matched = {
-    keywords: [],
+    keywords:       [],
     arabicPatterns: [],
-    roots: [],
-    intents: [],
-    addresseeIds: [],
-    topicIds: [],
+    roots:          [],
+    intents:        [],
+    addresseeIds:   [],
+    topicIds:       [],
   };
 
-  // Step 1: Expand transliterated / Arabic terms into English keywords + roots
+  // 1. Expand transliterations → English keywords + roots
   for (const [term, expansion] of Object.entries(TRANSLITERATIONS)) {
-    // Match whole word (handles multi-word keys like 'siratal mustaqeem' too)
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp('(?:^|\\s|[^a-z])' + escaped + '(?:$|\\s|[^a-z])', 'i');
-    if (re.test(q)) {
+    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp('(?:^|\\s|[^a-z])' + esc + '(?:$|\\s|[^a-z])', 'i').test(q)) {
       for (const eng of expansion.english) {
         if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
       }
@@ -941,14 +1193,12 @@ function parseQuery(rawQuery) {
     }
   }
 
-  // Step 2: Detect intents
+  // 2. Detect intents
   for (const [intent, triggers] of Object.entries(INTENTS)) {
-    if (triggers.some(t => q.includes(t))) {
-      matched.intents.push(intent);
-    }
+    if (triggers.some(t => q.includes(t))) matched.intents.push(intent);
   }
 
-  // Step 3: Detect addressee concepts
+  // 3. Detect addressees
   for (const addr of ADDRESSEES) {
     if (addr.keywords.some(kw => q.includes(kw))) {
       matched.addresseeIds.push(addr.id);
@@ -956,17 +1206,17 @@ function parseQuery(rawQuery) {
     }
   }
 
-  // Step 4: Detect topic concepts
+  // 4. Detect topics
   for (const topic of TOPICS) {
-    const hitKeywords = topic.keywords.filter(kw => q.includes(kw));
-    if (hitKeywords.length > 0) {
+    const hits = topic.keywords.filter(kw => q.includes(kw));
+    if (hits.length > 0) {
       matched.topicIds.push(topic.id);
       matched.roots.push(...topic.roots);
-      matched.keywords.push(...hitKeywords);
+      matched.keywords.push(...hits);
     }
   }
 
-  // Step 5: Tokenize remaining meaningful words as generic keywords
+  // 5. Generic tokenization of remaining meaningful words
   const tokens = rawQuery
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
@@ -977,9 +1227,9 @@ function parseQuery(rawQuery) {
     if (!matched.keywords.includes(t)) matched.keywords.push(t);
   }
 
-  matched.keywords = [...new Set(matched.keywords)];
+  matched.keywords       = [...new Set(matched.keywords)];
   matched.arabicPatterns = [...new Set(matched.arabicPatterns)];
-  matched.roots = [...new Set(matched.roots)];
+  matched.roots          = [...new Set(matched.roots)];
 
   return matched;
 }

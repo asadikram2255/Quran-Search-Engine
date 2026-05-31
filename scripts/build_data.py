@@ -9,7 +9,26 @@ import pandas as pd
 import json
 import os
 import sys
+import re
 from collections import defaultdict
+
+
+def normalize_arabic(text):
+    """Mirror the JS normalizeArabic() function exactly for consistent lookups."""
+    if not text:
+        return ''
+    # Remove tashkeel, superscript alef, Quranic annotation marks
+    text = re.sub(r'[ؐ-ًؚ-ٰۖ-ۜ۟-۪ۤۧۨ-ۭݿ]', '', text)
+    # Normalize alef variants → plain alef
+    text = re.sub(r'[أإآٱ]', 'ا', text)
+    # Remove standalone hamza
+    text = text.replace('ء', '')
+    # alef maqsura → ya
+    text = text.replace('ى', 'ي')
+    # ta marbuta → ha
+    text = text.replace('ة', 'ه')
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASET_DIR = os.path.join(ROOT, "Datasets")
@@ -225,6 +244,28 @@ with open(os.path.join(OUTPUT_DIR, 'juz.json'), 'w', encoding='utf-8') as f:
     json.dump(juz_list, f, ensure_ascii=False, separators=(',', ':'))
 
 log(f"Written {len(juz_list)} juz  →  data/juz.json")
+
+
+# ─────────────────────────────────────────────────────────
+# 6. Build word_roots.json (Arabic word → root lookup)
+# ─────────────────────────────────────────────────────────
+section("Building word_roots.json")
+
+word_root_map = defaultdict(set)
+for _, row in df_roots.iterrows():
+    root = clean(row.get('Arabic Root Word', ''))
+    word = clean(row.get('Actual Arabic Word', ''))
+    if root and word:
+        norm = normalize_arabic(word)
+        if norm:
+            word_root_map[norm].add(root)
+
+word_root_out = {k: list(v) for k, v in word_root_map.items()}
+
+with open(os.path.join(OUTPUT_DIR, 'word_roots.json'), 'w', encoding='utf-8') as f:
+    json.dump(word_root_out, f, ensure_ascii=False, separators=(',', ':'))
+
+log(f"Written {len(word_root_out)} unique normalized words -> data/word_roots.json")
 
 
 # ─────────────────────────────────────────────────────────

@@ -1,62 +1,68 @@
 /**
- * Quran Search Engine — BM25 Search Engine
- * Builds an in-memory inverted index from the loaded Quran data and scores
- * documents using BM25 + Arabic pattern boosting + root word matching.
+ * Quran Search Engine — Search Engine
+ *
+ * Pipeline:
+ *   1. Translate English query → Arabic  (MyMemory API, cached)
+ *   2. Extract Arabic roots from translation  (word_roots.json lookup)
+ *   3. BM25 on English text  (all 3 translations, with stemming)
+ *   4. Root-index matching  (translation roots + concept ontology roots)
+ *   5. Arabic pattern matching  (addressee detection)
+ *   6. Phrase boost
+ *   Combine → filter → rank → return with match explanations.
  */
 
 class QuranSearch {
-  constructor(ayaat) {
-    this.ayaat    = ayaat;
-    this.ayaatMap = {};         // id -> ayah
-    this.invIndex = {};         // term -> { docId: tf }
-    this.docLens  = {};         // docId -> token count
-    this.arNorm   = {};         // docId -> normalized Arabic string
-    this.rootIdx  = {};         // root -> Set of docIds
-    this.avgLen   = 0;
-    this.N        = ayaat.length;
+  constructor(ayaat, wordRoots) {
+    this.ayaat     = ayaat;
+    this.wordRoots = wordRoots;   // { normalizedWord: [root, …] }
+    this.ayaatMap  = {};
+    this.invIndex  = {};          // term → { docId: tf }
+    this.docLens   = {};
+    this.arNorm    = {};          // docId → normalized Arabic
+    this.rootIdx   = {};          // root → Set<docId>
+    this.avgLen    = 0;
+    this.N         = ayaat.length;
+    this._cache    = {};          // translation cache (session)
 
     this._build();
   }
 
-  // ─── Build index ────────────────────────────────────────────────────────
+  // ── Build index ──────────────────────────────────────────────────────────
 
   _build() {
-    let totalLen = 0;
-
+    let total = 0;
     for (const ayah of this.ayaat) {
       this.ayaatMap[ayah.id] = ayah;
 
-      // Combine all English text fields for indexing
-      const text = [ayah.en, ayah.t1, ayah.t2, ayah.t3]
-        .filter(Boolean).join(' ');
-
+      // Index all English text fields together
+      const text = [ayah.en, ayah.t1, ayah.t2, ayah.t3].filter(Boolean).join(' ');
       const tokens = this._tokenize(text);
       this.docLens[ayah.id] = tokens.length;
-      totalLen += tokens.length;
+      total += tokens.length;
 
-      // Term frequencies
       const tf = {};
-      for (const tok of tokens) tf[tok] = (tf[tok] || 0) + 1;
-
+      for (const tok of tokens) {
+        tf[tok] = (tf[tok] || 0) + 1;
+        // Also index the stemmed form
+        const stem = this._stem(tok);
+        if (stem !== tok) tf[stem] = (tf[stem] || 0) + 0.7;
+      }
       for (const [term, freq] of Object.entries(tf)) {
         if (!this.invIndex[term]) this.invIndex[term] = {};
         this.invIndex[term][ayah.id] = freq;
       }
 
-      // Normalized Arabic
       this.arNorm[ayah.id] = normalizeArabic(ayah.ar);
 
-      // Root word index
       for (const root of (ayah.roots || [])) {
         if (!this.rootIdx[root]) this.rootIdx[root] = new Set();
         this.rootIdx[root].add(ayah.id);
       }
     }
-
-    this.avgLen = totalLen / this.N;
+    this.avgLen = total / this.N;
   }
 
-  // ─── Tokenize ────────────────────────────────────────────────────────────
+  // ── Tokenize / Stem ──────────────────────────────────────────────────────
 
   _tokenize(text) {
     return text
@@ -66,151 +72,190 @@ class QuranSearch {
       .filter(t => t.length > 2 && !STOP_WORDS.has(t));
   }
 
-  // ─── BM25 ────────────────────────────────────────────────────────────────
+  _stem(tok) {
+    if (tok.length < 5) return tok;
+    if (tok.endsWith('tion'))  return tok.slice(0, -4);
+    if (tok.endsWith('ness'))  return tok.slice(0, -4);
+    if (tok.endsWith('ment'))  return tok.slice(0, -4);
+    if (tok.endsWith('ing'))   return tok.slice(0, -3);
+    if (tok.endsWith('ful'))   return tok.slice(0, -3);
+    if (tok.endsWith('ed'))    return tok.slice(0, -2);
+    if (tok.endsWith('er'))    return tok.slice(0, -2);
+    if (tok.endsWith('ly'))    return tok.slice(0, -2);
+    if (tok.endsWith('rs'))    return tok.slice(0, -1);
+    if (tok.endsWith('s') && !tok.endsWith('ss')) return tok.slice(0, -1);
+    return tok;
+  }
+
+  // ── BM25 ─────────────────────────────────────────────────────────────────
 
   _bm25(term, docId, k1 = 1.5, b = 0.75) {
     const postings = this.invIndex[term];
     if (!postings) return 0;
     const tf = postings[docId] || 0;
     if (tf === 0) return 0;
-
-    const df    = Object.keys(postings).length;
-    const idf   = Math.log((this.N - df + 0.5) / (df + 0.5) + 1);
-    const dlen  = this.docLens[docId] || 1;
-    const norm  = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dlen / this.avgLen));
-    return idf * norm;
+    const df   = Object.keys(postings).length;
+    const idf  = Math.log((this.N - df + 0.5) / (df + 0.5) + 1);
+    const dlen = this.docLens[docId] || 1;
+    return idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dlen / this.avgLen));
   }
 
-  // ─── Main search ─────────────────────────────────────────────────────────
+  // ── Main search (async) ───────────────────────────────────────────────────
 
-  /**
-   * @param {string} rawQuery  - natural language query
-   * @param {object} filters   - { place, surah, juz }
-   * @param {number} limit     - max results to return
-   * @returns {Array<{ayah, score, matchedConcepts}>}
-   */
-  search(rawQuery, filters = {}, limit = 100) {
-    if (!rawQuery.trim()) return [];
+  async search(rawQuery, filters = {}, limit = 150, onProgress) {
+    if (!rawQuery.trim()) return { results: [], arabicQuery: '', extractedRoots: [] };
 
-    const parsed  = parseQuery(rawQuery);
-    const scores  = {};   // docId -> score
-    const reasons = {};   // docId -> Set of matched concept labels
+    const parsed = parseQuery(rawQuery);
+    const scores  = {};
+    const reasons = {}; // docId → { roots: Set, keywords: Set, patterns: Set }
 
-    const addScore = (id, delta, label) => {
-      scores[id]  = (scores[id]  || 0) + delta;
-      if (label) {
-        if (!reasons[id]) reasons[id] = new Set();
-        reasons[id].add(label);
-      }
+    const addScore = (id, delta, type, label) => {
+      scores[id] = (scores[id] || 0) + delta;
+      if (!reasons[id]) reasons[id] = { roots: new Set(), keywords: new Set(), patterns: new Set() };
+      if (label) reasons[id][type].add(label);
     };
 
-    // 1. BM25 on English keywords
-    for (const term of parsed.keywords) {
-      const postings = this.invIndex[term] || {};
-      for (const [idStr, _] of Object.entries(postings)) {
-        const id = +idStr;
-        addScore(id, this._bm25(term, id), null);
+    // ── Step 1: Translate to Arabic ───────────────────────────────────────
+    onProgress?.('translate');
+    let arabicQuery = '';
+    let translationRoots = [];
+    try {
+      arabicQuery = await this._translateToArabic(rawQuery);
+      if (arabicQuery) {
+        onProgress?.('roots');
+        translationRoots = this._extractRootsFromArabic(arabicQuery);
+        for (const root of translationRoots) {
+          const ids = this.rootIdx[root];
+          if (ids) {
+            for (const id of ids) addScore(id, 4, 'roots', root);
+          }
+        }
       }
-    }
+    } catch (_) { /* translation failed — continue with English-only */ }
 
-    // 2. Arabic pattern matching — highest-signal boost
+    // ── Step 2: Arabic pattern matching (addressees) ───────────────────────
+    onProgress?.('search');
     for (const pattern of parsed.arabicPatterns) {
       const normPat = normalizeArabic(pattern);
       for (const ayah of this.ayaat) {
         if (this.arNorm[ayah.id].includes(normPat)) {
-          // Find which addressee concept this pattern belongs to
           const concept = ADDRESSEES.find(a => a.ar_patterns.includes(pattern));
-          addScore(ayah.id, 15, concept ? concept.label : 'Direct Arabic match');
+          addScore(ayah.id, 18, 'patterns', concept ? concept.label : 'Arabic pattern');
         }
       }
     }
 
-    // 3. Root word matching — moderate boost
+    // ── Step 3: Concept root matching (supplementary, no double-count) ────
     for (const root of parsed.roots) {
+      if (translationRoots.includes(root)) continue;
       const ids = this.rootIdx[root];
       if (ids) {
         const topic = TOPICS.find(t => t.roots.includes(root));
-        for (const id of ids) {
-          addScore(id, 2, topic ? topic.label : null);
-        }
+        for (const id of ids) addScore(id, 2, 'roots', root);
       }
     }
 
-    // 4. Surah-name matching (e.g. query mentions "Al-Baqarah")
-    // Already handled implicitly via English keywords.
+    // ── Step 4: English BM25 (stemmed + direct) ───────────────────────────
+    const allKeywords = [...new Set([...parsed.keywords, ...parsed.keywords.map(k => this._stem(k))])];
+    for (const term of allKeywords) {
+      const postings = this.invIndex[term] || {};
+      for (const idStr of Object.keys(postings)) {
+        const id = +idStr;
+        const sc = this._bm25(term, id);
+        if (sc > 0) addScore(id, sc, 'keywords', term.length > 4 ? term : null);
+      }
+    }
 
-    // 5. Build result list
-    let results = Object.entries(scores)
-      .map(([idStr, score]) => ({
-        ayah: this.ayaatMap[+idStr],
+    // ── Step 5: Phrase boost ──────────────────────────────────────────────
+    const phrases = this._extractPhrases(rawQuery);
+    for (const phrase of phrases) {
+      const lo = phrase.toLowerCase();
+      for (const ayah of this.ayaat) {
+        const txt = [ayah.en, ayah.t1, ayah.t2, ayah.t3].filter(Boolean).join(' ').toLowerCase();
+        if (txt.includes(lo)) addScore(ayah.id, 6, 'keywords', phrase);
+      }
+    }
+
+    // ── Build & rank ──────────────────────────────────────────────────────
+    let results = Object.entries(scores).map(([idStr, score]) => {
+      const id = +idStr;
+      const r  = reasons[id] || { roots: new Set(), keywords: new Set(), patterns: new Set() };
+      return {
+        ayah: this.ayaatMap[id],
         score,
-        matchedConcepts: reasons[+idStr] ? [...reasons[+idStr]] : [],
-      }))
-      .filter(r => r.ayah);
+        matchedRoots:    [...r.roots],
+        matchedKeywords: [...r.keywords].filter(k => k && k.length > 2),
+        matchedPatterns: [...r.patterns],
+      };
+    }).filter(r => r.ayah);
 
-    // 6. Apply filters
     if (filters.place) {
       const p = filters.place.toLowerCase();
       results = results.filter(r => r.ayah.place.toLowerCase() === p);
     }
     if (filters.surah) {
-      const sn = +filters.surah;
-      results = results.filter(r => r.ayah.sn === sn);
+      results = results.filter(r => r.ayah.sn === +filters.surah);
     }
     if (filters.juz) {
-      const jn = +filters.juz;
-      results = results.filter(r => r.ayah.juz === jn);
+      results = results.filter(r => r.ayah.juz === +filters.juz);
     }
 
-    // 7. Sort: score desc, then Quran order
     results.sort((a, b) => b.score - a.score || a.ayah.id - b.ayah.id);
 
-    return results.slice(0, limit);
+    return { results: results.slice(0, limit), arabicQuery, extractedRoots: translationRoots };
   }
 
-  /**
-   * Get concept summary for a query — used to build the banner above results.
-   * Returns array of { concept, count, label, description }
-   */
-  conceptSummary(rawQuery) {
-    const parsed = parseQuery(rawQuery);
-    const summary = [];
+  // ── Translation API ───────────────────────────────────────────────────────
 
-    for (const addrId of parsed.addresseeIds) {
-      const addr = ADDRESSEES.find(a => a.id === addrId);
-      if (!addr) continue;
-      // Count ayaat matching this pattern
-      let count = 0;
-      for (const pattern of addr.ar_patterns) {
-        const normPat = normalizeArabic(pattern);
-        for (const id in this.arNorm) {
-          if (this.arNorm[id].includes(normPat)) count++;
-        }
+  async _translateToArabic(query) {
+    const key = 'qt_' + query.trim().toLowerCase();
+    if (this._cache[key] !== undefined) return this._cache[key];
+    try {
+      const stored = sessionStorage.getItem(key);
+      if (stored !== null) { this._cache[key] = stored; return stored; }
+    } catch (_) {}
+
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(query)}&langpair=en|ar`;
+    const res = await Promise.race([
+      fetch(url).then(r => r.json()),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+    ]);
+
+    const text = res?.responseData?.translatedText || '';
+    // Accept only if it contains Arabic characters
+    const result = /[؀-ۿ]/.test(text) ? text : '';
+    this._cache[key] = result;
+    try { if (result) sessionStorage.setItem(key, result); } catch (_) {}
+    return result;
+  }
+
+  // ── Root extraction from Arabic text ─────────────────────────────────────
+
+  _extractRootsFromArabic(arabicText) {
+    const roots = [];
+    const norm  = normalizeArabic(arabicText);
+    const words = norm.split(/\s+/).filter(w => w.length > 1);
+    for (const word of words) {
+      for (const root of (this.wordRoots[word] || [])) {
+        if (!roots.includes(root)) roots.push(root);
       }
-      summary.push({
-        type: 'addressee',
-        label: addr.label,
-        description: addr.description,
-        count,
-      });
     }
+    return roots;
+  }
 
-    for (const topicId of parsed.topicIds) {
-      const topic = TOPICS.find(t => t.id === topicId);
-      if (!topic) continue;
-      let count = 0;
-      for (const root of topic.roots) {
-        if (this.rootIdx[root]) count += this.rootIdx[root].size;
-      }
-      // Deduplicate
-      summary.push({
-        type: 'topic',
-        label: topic.label,
-        description: `Ayaat related to ${topic.label} (matched via Arabic root words)`,
-        count,
-      });
-    }
+  // ── Phrase extraction ─────────────────────────────────────────────────────
 
-    return summary;
+  _extractPhrases(query) {
+    const phrases = [];
+    // Quoted phrases
+    for (const m of query.matchAll(/"([^"]{4,})"/g)) phrases.push(m[1]);
+    // Adjacent meaningful word pairs
+    const words = query
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+    for (let i = 0; i < words.length - 1; i++) phrases.push(`${words[i]} ${words[i + 1]}`);
+    return phrases;
   }
 }
