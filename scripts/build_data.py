@@ -248,10 +248,15 @@ log(f"Written {len(juz_list)} juz  →  data/juz.json")
 
 # ─────────────────────────────────────────────────────────
 # 6. Build word_roots.json (Arabic word → root lookup)
+#    AND root_vocab.json (root → top words with counts)
 # ─────────────────────────────────────────────────────────
 section("Building word_roots.json")
 
-word_root_map = defaultdict(set)
+from collections import Counter
+
+word_root_map  = defaultdict(set)
+root_word_freq = defaultdict(Counter)   # root -> Counter(normWord -> count)
+
 for _, row in df_roots.iterrows():
     root = clean(row.get('Arabic Root Word', ''))
     word = clean(row.get('Actual Arabic Word', ''))
@@ -259,13 +264,22 @@ for _, row in df_roots.iterrows():
         norm = normalize_arabic(word)
         if norm:
             word_root_map[norm].add(root)
+            root_word_freq[root][norm] += 1
 
 word_root_out = {k: list(v) for k, v in word_root_map.items()}
-
 with open(os.path.join(OUTPUT_DIR, 'word_roots.json'), 'w', encoding='utf-8') as f:
     json.dump(word_root_out, f, ensure_ascii=False, separators=(',', ':'))
-
 log(f"Written {len(word_root_out)} unique normalized words -> data/word_roots.json")
+
+# root_vocab: root -> top-25 words sorted by frequency (for answer panel vocab lookup)
+root_vocab_out = {}
+for root, counter in root_word_freq.items():
+    top = counter.most_common(25)
+    root_vocab_out[root] = [{'n': w, 'c': c} for w, c in top]
+
+with open(os.path.join(OUTPUT_DIR, 'root_vocab.json'), 'w', encoding='utf-8') as f:
+    json.dump(root_vocab_out, f, ensure_ascii=False, separators=(',', ':'))
+log(f"Written {len(root_vocab_out)} roots -> data/root_vocab.json")
 
 
 # ─────────────────────────────────────────────────────────

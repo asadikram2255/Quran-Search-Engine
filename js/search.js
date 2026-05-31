@@ -12,9 +12,10 @@
  */
 
 class QuranSearch {
-  constructor(ayaat, wordRoots) {
+  constructor(ayaat, wordRoots, rootVocab) {
     this.ayaat     = ayaat;
     this.wordRoots = wordRoots;   // { normalizedWord: [root, …] }
+    this.rootVocab = rootVocab;   // { root: [{ n: normWord, c: count }, …] }
     this.ayaatMap  = {};
     this.invIndex  = {};          // term → { docId: tf }
     this.docLens   = {};
@@ -241,6 +242,58 @@ class QuranSearch {
       }
     }
     return roots;
+  }
+
+  // ── Vocabulary lookup (for terms answer panel) ───────────────────────────
+
+  /**
+   * Returns top unique Arabic words across the given roots, sorted by frequency.
+   * Each entry: { normWord, count, roots[] }
+   */
+  getTermsForRoots(roots, limit = 30) {
+    // Arabic function words to exclude from term panels
+    const AR_STOP = new Set([
+      'التي','الذي','الذين','اللاتي','ما','من','في','على','إلي','عن',
+      'هذا','هذه','ذلك','تلك','هو','هي','هم','هن','انا','نحن',
+      'انت','انتم','كان','كانت','كانوا','ليس','قد','لا','ان','اي',
+      'له','لهم','لك','لكم','بل','ثم','او','لو','كل','حتي',
+      'بعد','قبل','عند','مع','عن','منه','منها','منهم','فيه','فيها',
+    ]);
+
+    const wordMap = {}; // normWord → { count, roots }
+    for (const root of roots) {
+      const entries = this.rootVocab[root] || [];
+      for (const { n, c } of entries) {
+        if (n.length < 3 || AR_STOP.has(n)) continue;
+        if (!wordMap[n]) wordMap[n] = { count: 0, roots: [] };
+        if (c > wordMap[n].count) wordMap[n].count = c;
+        if (!wordMap[n].roots.includes(root)) wordMap[n].roots.push(root);
+      }
+    }
+    return Object.entries(wordMap)
+      .map(([normWord, { count, roots }]) => ({ normWord, count, roots }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
+  }
+
+  /**
+   * Returns all ayaat containing the exact normalized Arabic word, in Quran order.
+   */
+  filterByNormWord(normWord, label) {
+    const results = [];
+    for (const ayah of this.ayaat) {
+      if (this.arNorm[ayah.id].split(/\s+/).includes(normWord)) {
+        results.push({
+          ayah,
+          score: 1,
+          matchedRoots:    this.wordRoots[normWord] || [],
+          matchedKeywords: [],
+          matchedPatterns: label ? [label] : [normWord],
+        });
+      }
+    }
+    results.sort((a, b) => a.ayah.id - b.ayah.id);
+    return results;
   }
 
   // ── Pattern search (for addressee filter) ────────────────────────────────

@@ -415,10 +415,16 @@ mark {
   color: var(--accent);
 }
 
+.answer-section-label {
+  font-size: .73rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--text-ter);
+  margin-bottom: 8px;
+}
+
 .addr-filter-label {
   font-size: .78rem; color: var(--text-ter);
-  padding-top: 4px; border-top: 1px solid var(--border);
-  margin-top: 2px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+  margin-top: 8px;
 }
 
 /* ── Load more ──────────────────────────────────────────────────────────── */

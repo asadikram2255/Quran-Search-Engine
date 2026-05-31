@@ -1130,6 +1130,387 @@ const TOPICS = [
 ];
 
 /**
+ * Comprehensive set of terms the Quran uses to address or refer to human beings.
+ * Grouped by category for the structured answer panel.
+ * ar_patterns: normalized Arabic substrings to search in ayah text.
+ */
+const HUMAN_ADDRESS_TERMS = [
+
+  // ── Direct Vocative Forms (يَا ...) ──────────────────────────────────────
+  {
+    id: 'ya_ayyuha_nas',
+    label: 'O Mankind',
+    ar: 'يَا أَيُّهَا النَّاسُ',
+    ar_patterns: ['يايها الناس'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_ayyuha_ladhina_amanu',
+    label: 'O Believers',
+    ar: 'يَا أَيُّهَا الَّذِينَ آمَنُوا',
+    ar_patterns: ['يايها الذين امنوا'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_ibadi',
+    label: "O My Servants",
+    ar: 'يَا عِبَادِي',
+    ar_patterns: ['يا عبادي', 'ياعبادي'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_bani_adam',
+    label: 'O Children of Adam',
+    ar: 'يَا بَنِي آدَمَ',
+    ar_patterns: ['يبني ادم'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_qawm',
+    label: 'O My People',
+    ar: 'يَا قَوْمِ',
+    ar_patterns: ['يا قوم', 'ياقوم'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_ayyuha_insan',
+    label: 'O Human Being',
+    ar: 'يَا أَيُّهَا الْإِنسَانُ',
+    ar_patterns: ['يايها الانسان'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_ayyuha_muzzammil',
+    label: 'O Wrapped in Garments',
+    ar: 'يَا أَيُّهَا الْمُزَّمِّلُ',
+    ar_patterns: ['يايها المزمل'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_ayyuha_muddaththir',
+    label: 'O Wrapped in a Cloak',
+    ar: 'يَا أَيُّهَا الْمُدَّثِّرُ',
+    ar_patterns: ['يايها المدثر'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_mashhar_jinn_ins',
+    label: 'O Assembly of Jinn & Humans',
+    ar: 'يَا مَعْشَرَ الْجِنِّ وَالْإِنسِ',
+    ar_patterns: ['يا معشر الجن والانس'],
+    category: 'vocative',
+  },
+  {
+    id: 'ayyuha_thaqalan',
+    label: 'O Two Weighty Beings',
+    ar: 'أَيُّهَا الثَّقَلَانِ',
+    ar_patterns: ['ايها الثقلان'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_ayyuha_kafirun',
+    label: 'O Disbelievers',
+    ar: 'يَا أَيُّهَا الْكَافِرُونَ',
+    ar_patterns: ['يايها الكفرون', 'الذين كفروا'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_ahl_kitab',
+    label: 'O People of the Book',
+    ar: 'يَا أَهْلَ الْكِتَابِ',
+    ar_patterns: ['ياهل الكتب'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_bani_israel',
+    label: 'O Children of Israel',
+    ar: 'يَا بَنِي إِسْرَائِيلَ',
+    ar_patterns: ['يبني اسريل'],
+    category: 'vocative',
+  },
+  {
+    id: 'ya_ayyuha_nabi',
+    label: 'O Prophet',
+    ar: 'يَا أَيُّهَا النَّبِيُّ',
+    ar_patterns: ['يايها النبي', 'يايها الرسول'],
+    category: 'vocative',
+  },
+
+  // ── Reference Nouns (general terms for humans) ────────────────────────────
+  {
+    id: 'al_nas',
+    label: 'Mankind',
+    ar: 'النَّاسُ',
+    ar_patterns: ['الناس'],
+    category: 'noun',
+  },
+  {
+    id: 'al_insan',
+    label: 'The Human Being',
+    ar: 'الْإِنسَانُ',
+    ar_patterns: ['الانسان'],
+    category: 'noun',
+  },
+  {
+    id: 'al_ins',
+    label: 'Humankind',
+    ar: 'الْإِنسُ',
+    ar_patterns: ['الانس'],
+    category: 'noun',
+  },
+  {
+    id: 'al_bashar',
+    label: 'Mortals / Human Beings',
+    ar: 'الْبَشَرُ',
+    ar_patterns: ['البشر'],
+    category: 'noun',
+  },
+  {
+    id: 'al_ibad',
+    label: "Allah's Servants",
+    ar: 'الْعِبَادُ',
+    ar_patterns: ['العباد'],
+    category: 'noun',
+  },
+  {
+    id: 'abd',
+    label: 'A Servant',
+    ar: 'عَبْدٌ',
+    ar_patterns: ['عبد'],
+    category: 'noun',
+  },
+
+  // ── Group Terms (named categories of people) ──────────────────────────────
+  {
+    id: 'al_muminun',
+    label: 'Believers (m.)',
+    ar: 'الْمُؤْمِنُونَ',
+    ar_patterns: ['المومنون'],
+    category: 'group',
+  },
+  {
+    id: 'al_muminat',
+    label: 'Believing Women',
+    ar: 'الْمُؤْمِنَاتُ',
+    ar_patterns: ['المومنات'],
+    category: 'group',
+  },
+  {
+    id: 'al_muslimun',
+    label: 'Muslims (m.)',
+    ar: 'الْمُسْلِمُونَ',
+    ar_patterns: ['المسلمون'],
+    category: 'group',
+  },
+  {
+    id: 'al_muslimat',
+    label: 'Muslim Women',
+    ar: 'الْمُسْلِمَاتُ',
+    ar_patterns: ['المسلمات'],
+    category: 'group',
+  },
+  {
+    id: 'alladhina_amanu',
+    label: 'Those Who Believe',
+    ar: 'الَّذِينَ آمَنُوا',
+    ar_patterns: ['الذين امنوا'],
+    category: 'group',
+  },
+  {
+    id: 'ummah',
+    label: 'Community / Nation',
+    ar: 'أُمَّةٌ',
+    ar_patterns: ['امه'],
+    category: 'group',
+  },
+  {
+    id: 'rijal',
+    label: 'Men',
+    ar: 'رِجَالٌ',
+    ar_patterns: ['رجال'],
+    category: 'group',
+  },
+  {
+    id: 'nisa',
+    label: 'Women',
+    ar: 'نِسَاءٌ',
+    ar_patterns: ['نساء'],
+    category: 'group',
+  },
+  {
+    id: 'dhurriyyah',
+    label: 'Offspring / Descendants',
+    ar: 'ذُرِّيَّةٌ',
+    ar_patterns: ['ذريه'],
+    category: 'group',
+  },
+  {
+    id: 'ahl',
+    label: 'People / Family',
+    ar: 'أَهْلٌ',
+    ar_patterns: ['اهل'],
+    category: 'group',
+  },
+
+  // ── Qualitative Terms (people defined by understanding/insight) ────────────
+  {
+    id: 'ulu_albab',
+    label: 'People of Understanding',
+    ar: 'أُولُو الْأَلْبَابِ',
+    ar_patterns: ['اولو الالباب'],
+    category: 'qualitative',
+  },
+  {
+    id: 'ulu_nuha',
+    label: 'People of Intellect',
+    ar: 'أُولُو النُّهَى',
+    ar_patterns: ['اولو النهي'],
+    category: 'qualitative',
+  },
+  {
+    id: 'ulu_absar',
+    label: 'People of Insight',
+    ar: 'أُولُو الْأَبْصَارِ',
+    ar_patterns: ['اولو الابصار'],
+    category: 'qualitative',
+  },
+];
+
+const HUMAN_TERM_CATEGORIES = {
+  vocative:    'Direct Vocatives (يَا ...)',
+  noun:        'Reference Nouns',
+  group:       'Group Terms',
+  qualitative: 'Qualitative Terms',
+};
+
+/**
+ * Concept expansions — maps common English concept words to Arabic roots.
+ * Generic (not query-specific): any query containing these words gets expanded roots.
+ * Enables data-driven vocabulary lookup for "terms" answer panels.
+ */
+const CONCEPT_EXPANSIONS = {
+  // ── Human beings ──────────────────────────────────────────────────────────
+  'human beings': ['ب ش ر', 'ا ن س', 'ن ف س', 'ع ب د', 'ا م ن', 'س ل م'],
+  'human being':  ['ب ش ر', 'ا ن س'],
+  'human':        ['ب ش ر', 'ا ن س'],
+  'mankind':      ['ا ن س', 'ب ش ر', 'ا م م'],
+  'humanity':     ['ا ن س', 'ب ش ر', 'ن ف س'],
+  'people':       ['ا ن س', 'ق و م', 'ا م م'],
+  'person':       ['ن ف س', 'ب ش ر'],
+  'mortal':       ['ب ش ر', 'م و ت'],
+  'creation':     ['خ ل ق', 'ف ط ر', 'ب د ع'],
+  'creature':     ['خ ل ق', 'ب ش ر'],
+  'servants':     ['ع ب د'],
+  'servant':      ['ع ب د'],
+
+  // ── Faith groups ──────────────────────────────────────────────────────────
+  'believers':    ['ا م ن'],
+  'believer':     ['ا م ن'],
+  'muslims':      ['س ل م'],
+  'muslim':       ['س ل م'],
+  'disbelievers': ['ك ف ر'],
+  'disbeliever':  ['ك ف ر'],
+  'hypocrites':   ['ن ف ق'],
+  'hypocrite':    ['ن ف ق'],
+  'polytheists':  ['ش ر ك'],
+  'righteous':    ['ص ل ح', 'ب ر ر'],
+
+  // ── Worship ───────────────────────────────────────────────────────────────
+  'worship':      ['ع ب د', 'ص ل و'],
+  'prayer':       ['ص ل و', 'د ع و', 'س ج د', 'ر ك ع'],
+  'supplication': ['د ع و'],
+  'fasting':      ['ص و م'],
+  'charity':      ['ص د ق', 'ز ك و', 'ن ف ق'],
+  'alms':         ['ز ك و', 'ص د ق'],
+  'pilgrimage':   ['ح ج ج', 'ط و ف'],
+  'purification': ['ط ه ر', 'غ س ل'],
+  'remembrance':  ['ذ ك ر'],
+
+  // ── Character virtues ─────────────────────────────────────────────────────
+  'patience':     ['ص ب ر'],
+  'gratitude':    ['ش ك ر'],
+  'mercy':        ['ر ح م'],
+  'compassion':   ['ر ح م'],
+  'forgiveness':  ['غ ف ر', 'ع ف و', 'ت و ب'],
+  'repentance':   ['ت و ب', 'غ ف ر'],
+  'justice':      ['ع د ل', 'ق س ط'],
+  'honesty':      ['ص د ق'],
+  'sincerity':    ['خ ل ص', 'ص د ق'],
+  'trust':        ['و ك ل', 'ا م ن'],
+  'humility':     ['خ ض ع', 'و ض ع'],
+  'generosity':   ['ك ر م', 'ن ف ق'],
+
+  // ── Vices ─────────────────────────────────────────────────────────────────
+  'arrogance':    ['ك ب ر', 'ف خ ر'],
+  'pride':        ['ك ب ر', 'ع ج ب'],
+  'envy':         ['ح س د'],
+  'injustice':    ['ظ ل م'],
+  'oppression':   ['ظ ل م', 'ب غ ي'],
+  'corruption':   ['ف س د'],
+  'hypocrisy':    ['ن ف ق', 'ر ا ي'],
+  'sin':          ['ذ ن ب', 'ا ث م', 'خ ط ا'],
+  'wrongdoing':   ['ظ ل م', 'ا ث م'],
+
+  // ── Theology ──────────────────────────────────────────────────────────────
+  'faith':        ['ا م ن', 'ي ق ن'],
+  'belief':       ['ا م ن'],
+  'monotheism':   ['و ح د'],
+  'oneness':      ['و ح د'],
+  'knowledge':    ['ع ل م', 'ح ك م'],
+  'wisdom':       ['ح ك م', 'ع ل م'],
+  'guidance':     ['ه د ي'],
+  'truth':        ['ح ق ق', 'ص د ق'],
+  'light':        ['ن و ر'],
+  'piety':        ['و ق ي', 'ص ل ح'],
+
+  // ── Afterlife ─────────────────────────────────────────────────────────────
+  'paradise':     ['ج ن ن', 'خ ل د'],
+  'heaven':       ['ج ن ن'],
+  'hell':         ['ن ا ر', 'ج ح م', 'ع ذ ب'],
+  'hellfire':     ['ن ا ر', 'ج ح م'],
+  'punishment':   ['ع ذ ب', 'ن ا ر'],
+  'reward':       ['ا ج ر', 'ث و ب'],
+  'judgment':     ['ق ض ي', 'ح س ب', 'ح ك م'],
+  'resurrection': ['ب ع ث', 'ق و م', 'ح ش ر'],
+  'death':        ['م و ت', 'ا ج ل'],
+  'soul':         ['ن ف س', 'ر و ح'],
+  'hereafter':    ['ا خ ر'],
+  'intercession': ['ش ف ع'],
+
+  // ── Social & family ───────────────────────────────────────────────────────
+  'family':       ['ا ه ل', 'ا ب و', 'و ل د'],
+  'parents':      ['و ل د', 'ا ب و'],
+  'children':     ['و ل د', 'ب ن و'],
+  'women':        ['ن س و', 'م ر ا'],
+  'men':          ['ر ج ل', 'ذ ك ر'],
+  'orphans':      ['ي ت م'],
+  'marriage':     ['ن ك ح'],
+  'divorce':      ['ط ل ق'],
+
+  // ── Finance & law ─────────────────────────────────────────────────────────
+  'usury':        ['ر ب و'],
+  'interest':     ['ر ب و'],
+  'trade':        ['ت ج ر', 'ب ي ع'],
+  'inheritance':  ['و ر ث'],
+  'lawful':       ['ح ل ل'],
+  'forbidden':    ['ح ر م'],
+
+  // ── Prophets & scripture ──────────────────────────────────────────────────
+  'prophets':     ['ن ب و', 'ر س ل'],
+  'messengers':   ['ر س ل'],
+  'revelation':   ['و ح ي', 'ن ز ل'],
+  'angels':       ['م ل ك'],
+  'signs':        ['ا ي ي', 'خ ل ق'],
+  'provision':    ['ر ز ق'],
+
+  // ── Nature ────────────────────────────────────────────────────────────────
+  'heaven and earth': ['س م و', 'ا ر ض'],
+  'heavens':      ['س م و'],
+  'earth':        ['ا ر ض'],
+  'water':        ['م ا و'],
+};
+
+/**
  * Intent detection — what the user wants to do with the results.
  */
 const INTENTS = {
@@ -1185,7 +1566,18 @@ function parseQuery(rawQuery) {
     topicIds:       [],
   };
 
-  // 1. Expand transliterations → English keywords + roots
+  // 1a. Expand concept words → roots (longest match first to avoid partial matches)
+  const conceptKeys = Object.keys(CONCEPT_EXPANSIONS).sort((a, b) => b.length - a.length);
+  for (const concept of conceptKeys) {
+    const esc = concept.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp('(?:^|[^a-z])' + esc + '(?:$|[^a-z])', 'i').test(q)) {
+      for (const root of CONCEPT_EXPANSIONS[concept]) {
+        if (!matched.roots.includes(root)) matched.roots.push(root);
+      }
+    }
+  }
+
+  // 1b. Expand transliterations → English keywords + roots
   for (const [term, expansion] of Object.entries(TRANSLITERATIONS)) {
     const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp('(?:^|\\s|[^a-z])' + esc + '(?:$|\\s|[^a-z])', 'i').test(q)) {
@@ -1203,9 +1595,15 @@ function parseQuery(rawQuery) {
     if (triggers.some(t => q.includes(t))) matched.intents.push(intent);
   }
 
+  // Whole-word match helper — prevents 'ad' matching inside 'address' etc.
+  const kwMatch = kw => {
+    const esc = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(?:^|[^a-z])' + esc + '(?:$|[^a-z])', 'i').test(q);
+  };
+
   // 3. Detect addressees
   for (const addr of ADDRESSEES) {
-    if (addr.keywords.some(kw => q.includes(kw))) {
+    if (addr.keywords.some(kwMatch)) {
       matched.addresseeIds.push(addr.id);
       matched.arabicPatterns.push(...addr.ar_patterns);
     }
@@ -1213,7 +1611,7 @@ function parseQuery(rawQuery) {
 
   // 4. Detect topics
   for (const topic of TOPICS) {
-    const hits = topic.keywords.filter(kw => q.includes(kw));
+    const hits = topic.keywords.filter(kwMatch);
     if (hits.length > 0) {
       matched.topicIds.push(topic.id);
       matched.roots.push(...topic.roots);

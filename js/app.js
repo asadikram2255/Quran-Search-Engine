@@ -30,23 +30,25 @@ class QuranApp {
     try {
       this._setLoading('Loading Quran data…');
 
-      const [ayaatData, surahData, wordRootsData] = await Promise.all([
+      const [ayaatData, surahData, wordRootsData, rootVocabData] = await Promise.all([
         fetch('data/quran.json').then(r => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           return r.json();
         }),
         fetch('data/surah.json').then(r => r.json()),
         fetch('data/word_roots.json').then(r => r.json()),
+        fetch('data/root_vocab.json').then(r => r.json()),
       ]);
 
       this.ayaat     = ayaatData;
       this.surahs    = surahData;
       this.wordRoots = wordRootsData;
+      this.rootVocab = rootVocabData;
 
       this._setLoading('Building search index…');
       await new Promise(r => setTimeout(r, 30));
 
-      this.engine = new QuranSearch(this.ayaat, this.wordRoots);
+      this.engine = new QuranSearch(this.ayaat, this.wordRoots, this.rootVocab);
 
       this._hideLoading();
       this._populateFilters();
@@ -212,7 +214,10 @@ class QuranApp {
 
       if (answerType === 'addressee_listing') {
         this._answerMode = 'addressee_listing';
-        this._renderAnswerPanel(query, parsed);
+        // Use concept-expansion roots for vocab (translation roots carry query-context noise)
+        // Fall back to translation roots only when concept expansion found nothing
+        const vocabRoots = parsed.roots.length > 0 ? parsed.roots : extractedRoots;
+        this._renderAnswerPanel(query, parsed, vocabRoots);
       }
 
       this._renderPage(false);
@@ -270,79 +275,87 @@ class QuranApp {
     strip.hidden = false;
   }
 
-  // ── Answer panel (addressee listing) ─────────────────────────────────────
+  // ── Answer panel ─────────────────────────────────────────────────────────
 
-  _renderAnswerPanel(query, parsed) {
+  _renderAnswerPanel(query, parsed, allRoots) {
     const panel = document.getElementById('answer-panel');
+    const q     = query.toLowerCase();
 
-    // Get counts for every addressee
+    // ── Section 1: Vocative patterns (يَا ... forms) ─────────────────────
     const addrWithCounts = this.engine.countForAddressees();
-
-    // Sort: query-matched addressees first, then by count desc
-    const matchedIds = new Set(parsed.addresseeIds);
+    const matchedIds     = new Set(parsed.addresseeIds);
+    // Show all addressees, matched ones first
     addrWithCounts.sort((a, b) => {
-      const aMatch = matchedIds.has(a.id) ? 1 : 0;
-      const bMatch = matchedIds.has(b.id) ? 1 : 0;
-      return bMatch - aMatch || b.count - a.count;
+      const am = matchedIds.has(a.id) ? 1 : 0;
+      const bm = matchedIds.has(b.id) ? 1 : 0;
+      return bm - am || b.count - a.count;
     });
 
-    // Build header sentence
-    const q = query.toLowerCase();
-    let header = 'The Quran uses these terms to address different groups:';
-    if (q.includes('human') || q.includes('mankind') || q.includes('people') || q.includes('everyone')) {
-      header = 'Terms the Quran uses to address human beings:';
-    } else if (q.includes('believer') || q.includes('muslim') || q.includes('faith')) {
-      header = 'Terms the Quran uses to address believers:';
-    } else if (q.includes('prophet') || q.includes('messenger')) {
-      header = 'Terms the Quran uses to address the Prophet ﷺ:';
-    } else if (q.includes('all') || q.includes('every') || q.includes('different')) {
-      header = 'All addressee terms used in the Quran:';
-    }
-
-    const cards = addrWithCounts.map(addr => {
-      // Extract the Arabic text from the label (inside the parens)
+    const vocativeCards = addrWithCounts.map(addr => {
       const arMatch = addr.label.match(/\(([^)]+)\)/);
       const arText  = arMatch ? arMatch[1] : addr.ar_patterns[0] || '';
-      // English part only
       const enLabel = addr.label.replace(/\s*\([^)]*\)/, '').trim();
-
-      return `
-        <button class="addr-card" data-addr-id="${this._esc(addr.id)}" type="button">
-          <span class="addr-en">${this._esc(enLabel)}</span>
-          <span class="addr-ar" dir="rtl" lang="ar">${this._esc(arText)}</span>
-          <span class="addr-count">${addr.count} ayaat</span>
-        </button>
-      `;
+      return `<button class="addr-card" data-type="pattern" data-addr-id="${this._esc(addr.id)}" type="button">
+        <span class="addr-en">${this._esc(enLabel)}</span>
+        <span class="addr-ar" dir="rtl" lang="ar">${this._esc(arText)}</span>
+        <span class="addr-count">${addr.count} ayaat</span>
+      </button>`;
     }).join('');
+
+    // ── Section 2: Reference vocabulary terms ─────────────────────────────
+    const vocabTerms = this.engine.getTermsForRoots(allRoots, 30);
+
+    const vocabCards = vocabTerms.map(term =>
+      `<button class="addr-card" data-type="word" data-norm-word="${this._esc(term.normWord)}" type="button">
+        <span class="addr-ar" dir="rtl" lang="ar">${this._esc(term.normWord)}</span>
+        <span class="addr-count">${term.count}× in Quran</span>
+      </button>`
+    ).join('');
+
+    // Build a natural-language header
+    let header = 'Quranic terms for the concept in your query:';
+    if (q.includes('human') || q.includes('mankind') || q.includes('people'))
+      header = 'Terms the Quran uses to refer to human beings:';
+    else if (q.includes('believer') || q.includes('muslim'))
+      header = 'Terms the Quran uses to refer to believers:';
+    else if (q.includes('prophet') || q.includes('messenger'))
+      header = 'Terms the Quran uses to refer to prophets and messengers:';
 
     panel.innerHTML = `
       <div class="answer-header">
         <span class="answer-icon">📋</span>
         <span>${this._esc(header)}</span>
       </div>
-      <div class="addr-grid">${cards}</div>
+
+      ${vocativeCards ? `
+      <div class="answer-section-label">Direct address terms (يَا … vocatives)</div>
+      <div class="addr-grid">${vocativeCards}</div>` : ''}
+
+      ${vocabCards ? `
+      <div class="answer-section-label" style="margin-top:14px">Reference terms (actual Quranic vocabulary)</div>
+      <div class="addr-grid">${vocabCards}</div>` : ''}
+
       <div class="addr-filter-label" id="addr-filter-label">
-        Click a term above to filter the results below
+        Click any term to filter the results below
       </div>
     `;
     panel.hidden = false;
 
-    // Bind click handlers on the cards
     panel.querySelectorAll('.addr-card').forEach(btn => {
-      btn.addEventListener('click', () => this._selectAddresseeFilter(btn));
+      btn.addEventListener('click', () => this._selectTermFilter(btn));
     });
   }
 
-  _selectAddresseeFilter(btn) {
-    const panel = document.getElementById('answer-panel');
-    const addrId = btn.dataset.addrId;
+  _selectTermFilter(btn) {
+    const panel   = document.getElementById('answer-panel');
+    const type    = btn.dataset.type;
+    const filterKey = type === 'pattern' ? `pat:${btn.dataset.addrId}` : `word:${btn.dataset.normWord}`;
 
     // Deselect if already selected
-    if (this._activeFilter === addrId) {
+    if (this._activeFilter === filterKey) {
       this._activeFilter = null;
       panel.querySelectorAll('.addr-card').forEach(b => b.classList.remove('selected'));
-      document.getElementById('addr-filter-label').textContent =
-        'Click a term above to filter the results below';
+      document.getElementById('addr-filter-label').textContent = 'Click any term to filter the results below';
       this.results = this._allResults;
       this._updateResultsCount(this.results.length);
       this.page = 0;
@@ -350,21 +363,22 @@ class QuranApp {
       return;
     }
 
-    this._activeFilter = addrId;
-    panel.querySelectorAll('.addr-card').forEach(b =>
-      b.classList.toggle('selected', b.dataset.addrId === addrId)
-    );
+    this._activeFilter = filterKey;
+    panel.querySelectorAll('.addr-card').forEach(b => b.classList.toggle('selected', b === btn));
 
-    // Get the addressee object
-    const addr = ADDRESSEES.find(a => a.id === addrId);
-    if (!addr) return;
+    let filtered, label;
+    if (type === 'pattern') {
+      const addr = ADDRESSEES.find(a => a.id === btn.dataset.addrId);
+      if (!addr) return;
+      filtered = this.engine.searchByPattern(addr.ar_patterns, addr.label);
+      label    = `Showing ${filtered.length} ayaat: ${addr.label.replace(/\s*\([^)]*\)/, '')}`;
+    } else {
+      const normWord = btn.dataset.normWord;
+      filtered = this.engine.filterByNormWord(normWord, normWord);
+      label    = `Showing ${filtered.length} ayaat containing: ${normWord}`;
+    }
 
-    // Search by Arabic pattern for exact matches, sorted in Quran order
-    const filtered = this.engine.searchByPattern(addr.ar_patterns, addr.label);
-
-    document.getElementById('addr-filter-label').textContent =
-      `Showing ${filtered.length} ayaat addressed to: ${addr.label.replace(/\s*\([^)]*\)/, '')}`;
-
+    document.getElementById('addr-filter-label').textContent = label;
     this._updateResultsCount(filtered.length);
     this.results = filtered;
     this.page    = 0;
