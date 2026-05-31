@@ -1133,9 +1133,12 @@ const TOPICS = [
  * Intent detection — what the user wants to do with the results.
  */
 const INTENTS = {
-  address:  ['address','addressed','call','called','say to','speak to',
-              'term','phrase','expression','vocative','how does allah address',
-              'how does god address','what term','what word','what phrase','how addressed'],
+  address:  ['address','addressed','addresses','call','called','say to','speak to',
+              'term','terms','phrase','phrases','expression','expressions','vocative',
+              'how does allah address','how does god address','what term','what terms',
+              'what word','what phrase','what phrases','how addressed','ways to address',
+              'ways allah','ways god','referred to as','known as','called by','uses to address',
+              'used by quran','used to address','used for addressing'],
   command:  ['command','commanded','order','instruction','obligatory','must','prescribed',
               'duty','what are we ordered','told to','required to','mandatory'],
   forbid:   ['forbid','forbidden','prohibited','haram','not allowed','must not',
@@ -1148,6 +1151,8 @@ const INTENTS = {
               'occurs','appear','appears','mentioned how many'],
   story:    ['story','stories','narrative','tale','history','what happened to',
               'incident','event','account of'],
+  list:     ['list','enumerate','name all','what are the','give all','show all',
+              'all the','all types','all ways','all terms','all groups'],
 };
 
 /**

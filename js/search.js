@@ -243,6 +243,39 @@ class QuranSearch {
     return roots;
   }
 
+  // ── Pattern search (for addressee filter) ────────────────────────────────
+
+  searchByPattern(patterns, label) {
+    const normPats = patterns.map(p => normalizeArabic(p));
+    const results  = [];
+    for (const ayah of this.ayaat) {
+      const arN = this.arNorm[ayah.id];
+      if (normPats.some(np => arN.includes(np))) {
+        results.push({
+          ayah,
+          score: 1,
+          matchedRoots:    [],
+          matchedKeywords: [],
+          matchedPatterns: label ? [label] : [],
+        });
+      }
+    }
+    results.sort((a, b) => a.ayah.id - b.ayah.id);
+    return results;
+  }
+
+  // Count ayaat matching each addressee's Arabic patterns
+  countForAddressees() {
+    return ADDRESSEES.map(addr => {
+      const normPats = addr.ar_patterns.map(p => normalizeArabic(p));
+      let count = 0;
+      for (const id in this.arNorm) {
+        if (normPats.some(np => this.arNorm[id].includes(np))) count++;
+      }
+      return { ...addr, count };
+    });
+  }
+
   // ── Phrase extraction ─────────────────────────────────────────────────────
 
   _extractPhrases(query) {

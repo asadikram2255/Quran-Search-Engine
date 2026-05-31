@@ -6,16 +6,19 @@ const PAGE_SIZE = 20;
 
 class QuranApp {
   constructor() {
-    this.ayaat     = null;
-    this.surahs    = null;
-    this.wordRoots = null;
-    this.engine    = null;
-    this.results   = [];
-    this.page      = 0;
-    this.filters   = { place: '', surah: '', juz: '' };
-    this.dark      = localStorage.getItem('theme') === 'dark';
-    this._lastQuery = '';
-    this._lastKeywords = [];
+    this.ayaat          = null;
+    this.surahs         = null;
+    this.wordRoots      = null;
+    this.engine         = null;
+    this.results        = [];
+    this.page           = 0;
+    this.filters        = { place: '', surah: '', juz: '' };
+    this.dark           = localStorage.getItem('theme') === 'dark';
+    this._lastQuery     = '';
+    this._lastKeywords  = [];
+    this._answerMode    = null;   // null | 'addressee_listing'
+    this._activeFilter  = null;  // addressee id currently selected in answer panel
+    this._allResults    = [];    // unfiltered results (for answer-panel switching)
   }
 
   // ── Init ─────────────────────────────────────────────────────────────────
@@ -92,7 +95,6 @@ class QuranApp {
       opt.textContent = `${s.no}. ${s.en} (${s.ar})`;
       surahSel.appendChild(opt);
     }
-
     const juzSel = document.getElementById('filter-juz');
     for (let j = 1; j <= 30; j++) {
       const opt = document.createElement('option');
@@ -147,40 +149,79 @@ class QuranApp {
     });
   }
 
+  // ── Question / answer-type detection ─────────────────────────────────────
+
+  _isQuestionQuery(query) {
+    const q = query.trim().toLowerCase();
+    if (q.endsWith('?')) return true;
+    return /^(what|which|how|where|when|why|list|name|tell|show|give|mention|are there|is there|does|do the|does the)/i.test(q);
+  }
+
+  /**
+   * Returns 'addressee_listing' or null.
+   * Only activates when the query is a question AND is asking about address terms.
+   */
+  _detectAnswerType(query, parsed) {
+    if (!this._isQuestionQuery(query)) return null;
+    if (parsed.intents.includes('address') || parsed.intents.includes('list')) {
+      const q = query.toLowerCase();
+      const addressClues = [
+        'term','terms','address','addresses','addressed','call','called','refer','referred',
+        'phrase','phrases','expression','expressions','vocative','way','ways','used','uses',
+        'how allah','how god','how does','what does quran call','what are the',
+      ];
+      if (addressClues.some(c => q.includes(c))) return 'addressee_listing';
+    }
+    // Also: if explicitly asking about addressees/groups without other strong topic
+    if (parsed.intents.includes('address') && parsed.addresseeIds.length === 0) {
+      return 'addressee_listing';
+    }
+    return null;
+  }
+
   // ── Run search ───────────────────────────────────────────────────────────
 
   async _run(query) {
     if (!query) return;
-    this._lastQuery = query;
+    this._lastQuery     = query;
+    this._answerMode    = null;
+    this._activeFilter  = null;
+    this._allResults    = [];
 
-    // Show the compact hero + progress bar
     document.getElementById('search-section').classList.add('compact');
     document.getElementById('filter-bar').hidden = true;
     document.getElementById('results-section').hidden = true;
+    document.getElementById('answer-panel').hidden = true;
     this._showProgress('translate');
 
     try {
       const { results, arabicQuery, extractedRoots } = await this.engine.search(
-        query,
-        this.filters,
-        200,
+        query, this.filters, 200,
         step => this._showProgress(step),
       );
 
-      this.results = results;
-      this._lastKeywords = parseQuery(query).keywords;
+      const parsed     = parseQuery(query);
+      const answerType = this._detectAnswerType(query, parsed);
+
+      this._lastKeywords = parsed.keywords;
+      this._allResults   = results;
+      this.results       = results;
 
       this._hideProgress();
       this._renderPipelineInfo(arabicQuery, extractedRoots);
+
+      if (answerType === 'addressee_listing') {
+        this._answerMode = 'addressee_listing';
+        this._renderAnswerPanel(query, parsed);
+      }
+
       this._renderPage(false);
 
       document.getElementById('filter-bar').hidden = false;
       document.getElementById('results-section').hidden = false;
 
       const countEl = document.getElementById('results-count');
-      countEl.textContent = results.length
-        ? `${results.length} ayaat found`
-        : '';
+      countEl.textContent = results.length ? `${results.length} ayaat found` : '';
 
       document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -195,10 +236,9 @@ class QuranApp {
   _showProgress(step) {
     const bar = document.getElementById('search-progress');
     bar.hidden = false;
-    const steps = ['translate', 'roots', 'search'];
-    const idx = steps.indexOf(step);
-    steps.forEach((s, i) => {
-      const el = bar.querySelector(`[data-step="${s}"]`);
+    ['translate', 'roots', 'search'].forEach((s, i) => {
+      const idx = ['translate', 'roots', 'search'].indexOf(step);
+      const el  = bar.querySelector(`[data-step="${s}"]`);
       if (!el) return;
       el.classList.toggle('active', i === idx);
       el.classList.toggle('done',   i < idx);
@@ -213,10 +253,7 @@ class QuranApp {
 
   _renderPipelineInfo(arabicQuery, extractedRoots) {
     const strip = document.getElementById('pipeline-info');
-    if (!arabicQuery && !extractedRoots.length) {
-      strip.hidden = true;
-      return;
-    }
+    if (!arabicQuery && !extractedRoots.length) { strip.hidden = true; return; }
 
     let html = '';
     if (arabicQuery) {
@@ -229,9 +266,114 @@ class QuranApp {
                  `<span class="root-chip" dir="rtl">${this._esc(r)}</span>`
                ).join('')}</span>`;
     }
-
     strip.innerHTML = html;
     strip.hidden = false;
+  }
+
+  // ── Answer panel (addressee listing) ─────────────────────────────────────
+
+  _renderAnswerPanel(query, parsed) {
+    const panel = document.getElementById('answer-panel');
+
+    // Get counts for every addressee
+    const addrWithCounts = this.engine.countForAddressees();
+
+    // Sort: query-matched addressees first, then by count desc
+    const matchedIds = new Set(parsed.addresseeIds);
+    addrWithCounts.sort((a, b) => {
+      const aMatch = matchedIds.has(a.id) ? 1 : 0;
+      const bMatch = matchedIds.has(b.id) ? 1 : 0;
+      return bMatch - aMatch || b.count - a.count;
+    });
+
+    // Build header sentence
+    const q = query.toLowerCase();
+    let header = 'The Quran uses these terms to address different groups:';
+    if (q.includes('human') || q.includes('mankind') || q.includes('people') || q.includes('everyone')) {
+      header = 'Terms the Quran uses to address human beings:';
+    } else if (q.includes('believer') || q.includes('muslim') || q.includes('faith')) {
+      header = 'Terms the Quran uses to address believers:';
+    } else if (q.includes('prophet') || q.includes('messenger')) {
+      header = 'Terms the Quran uses to address the Prophet ﷺ:';
+    } else if (q.includes('all') || q.includes('every') || q.includes('different')) {
+      header = 'All addressee terms used in the Quran:';
+    }
+
+    const cards = addrWithCounts.map(addr => {
+      // Extract the Arabic text from the label (inside the parens)
+      const arMatch = addr.label.match(/\(([^)]+)\)/);
+      const arText  = arMatch ? arMatch[1] : addr.ar_patterns[0] || '';
+      // English part only
+      const enLabel = addr.label.replace(/\s*\([^)]*\)/, '').trim();
+
+      return `
+        <button class="addr-card" data-addr-id="${this._esc(addr.id)}" type="button">
+          <span class="addr-en">${this._esc(enLabel)}</span>
+          <span class="addr-ar" dir="rtl" lang="ar">${this._esc(arText)}</span>
+          <span class="addr-count">${addr.count} ayaat</span>
+        </button>
+      `;
+    }).join('');
+
+    panel.innerHTML = `
+      <div class="answer-header">
+        <span class="answer-icon">📋</span>
+        <span>${this._esc(header)}</span>
+      </div>
+      <div class="addr-grid">${cards}</div>
+      <div class="addr-filter-label" id="addr-filter-label">
+        Click a term above to filter the results below
+      </div>
+    `;
+    panel.hidden = false;
+
+    // Bind click handlers on the cards
+    panel.querySelectorAll('.addr-card').forEach(btn => {
+      btn.addEventListener('click', () => this._selectAddresseeFilter(btn));
+    });
+  }
+
+  _selectAddresseeFilter(btn) {
+    const panel = document.getElementById('answer-panel');
+    const addrId = btn.dataset.addrId;
+
+    // Deselect if already selected
+    if (this._activeFilter === addrId) {
+      this._activeFilter = null;
+      panel.querySelectorAll('.addr-card').forEach(b => b.classList.remove('selected'));
+      document.getElementById('addr-filter-label').textContent =
+        'Click a term above to filter the results below';
+      this.results = this._allResults;
+      this._updateResultsCount(this.results.length);
+      this.page = 0;
+      this._renderPage(false);
+      return;
+    }
+
+    this._activeFilter = addrId;
+    panel.querySelectorAll('.addr-card').forEach(b =>
+      b.classList.toggle('selected', b.dataset.addrId === addrId)
+    );
+
+    // Get the addressee object
+    const addr = ADDRESSEES.find(a => a.id === addrId);
+    if (!addr) return;
+
+    // Search by Arabic pattern for exact matches, sorted in Quran order
+    const filtered = this.engine.searchByPattern(addr.ar_patterns, addr.label);
+
+    document.getElementById('addr-filter-label').textContent =
+      `Showing ${filtered.length} ayaat addressed to: ${addr.label.replace(/\s*\([^)]*\)/, '')}`;
+
+    this._updateResultsCount(filtered.length);
+    this.results = filtered;
+    this.page    = 0;
+    this._renderPage(false);
+  }
+
+  _updateResultsCount(n) {
+    document.getElementById('results-count').textContent =
+      n ? `${n} ayaat found` : '';
   }
 
   // ── Render result page ───────────────────────────────────────────────────
@@ -265,15 +407,12 @@ class QuranApp {
 
     const placeClass = ayah.place === 'Meccan' ? 'badge-mecca' : 'badge-medina';
 
-    // Translations — primary + others
     const allTrans = [ayah.en, ayah.t1, ayah.t2, ayah.t3].filter(Boolean);
     const primary  = allTrans[0] || '';
     const others   = allTrans.slice(1);
 
-    // Highlight matched keywords in the primary translation
     const highlightedPrimary = this._highlight(primary, matchedKeywords);
 
-    // Match-reason chips
     const rootChips    = matchedRoots.slice(0, 5).map(r =>
       `<span class="match-chip match-root" dir="rtl" title="Arabic root">${this._esc(r)}</span>`
     ).join('');
@@ -286,7 +425,6 @@ class QuranApp {
 
     const hasReasons = rootChips || kwChips || patternChips;
 
-    // Other translations HTML
     const othersHtml = others.length
       ? `<div class="other-trans" hidden>
            ${others.map((t, i) => `
@@ -319,7 +457,6 @@ class QuranApp {
       </div>` : ''}
     `;
 
-    // Toggle other translations
     const toggleBtn = card.querySelector('.toggle-trans');
     if (toggleBtn) {
       toggleBtn.addEventListener('click', () => {
@@ -354,12 +491,11 @@ class QuranApp {
       .filter(k => k && k.length >= 3)
       .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
       .join('|');
-
     if (!patterns) return this._esc(rawText);
 
-    const re = new RegExp(`\\b(${patterns})\\w*`, 'gi');
+    const re    = new RegExp(`\\b(${patterns})\\w*`, 'gi');
     const parts = [];
-    let last = 0;
+    let last    = 0;
 
     for (const m of rawText.matchAll(re)) {
       parts.push(this._esc(rawText.slice(last, m.index)));
