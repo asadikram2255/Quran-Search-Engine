@@ -208,7 +208,7 @@ class QuranApp {
     this._showProgress('translate');
 
     try {
-      const { results, arabicQuery, extractedRoots } = await this.engine.search(
+      const { results, arabicQuery, extractedRoots, exactCount } = await this.engine.search(
         query, this.filters, 200,
         step => { if (this._searchGen === myGen) this._showProgress(step); },
       );
@@ -239,8 +239,12 @@ class QuranApp {
       document.getElementById('filter-bar').hidden = false;
       document.getElementById('results-section').hidden = false;
 
+      const surahCount = new Set(results.map(r => r.ayah.sn)).size;
+      const exactLabel = exactCount > 0 ? ` · ${exactCount} exact matches` : '';
       const countEl = document.getElementById('results-count');
-      countEl.textContent = results.length ? `${results.length} ayaat found` : '';
+      countEl.textContent = results.length
+        ? `${results.length} ayaat across ${surahCount} surahs${exactLabel}`
+        : '';
 
       document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
 

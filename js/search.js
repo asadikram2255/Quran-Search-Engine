@@ -104,7 +104,7 @@ class QuranSearch {
   // ── Main search (async) ───────────────────────────────────────────────────
 
   async search(rawQuery, filters = {}, limit = 150, onProgress) {
-    if (!rawQuery.trim()) return { results: [], arabicQuery: '', extractedRoots: [] };
+    if (!rawQuery.trim()) return { results: [], arabicQuery: '', extractedRoots: [], exactCount: 0 };
 
     const parsed = parseQuery(rawQuery);
     const scores  = {};
@@ -177,6 +177,18 @@ class QuranSearch {
       }
     }
 
+    // ── Step 6: Exact Arabic word matching ────────────────────────────────
+    // Highest-signal step — finds precise word forms (e.g. الحكيم, قل, المتقين)
+    const exactSet = new Set(); // ayah ids that matched an exact word
+    for (const normWord of (parsed.exactWords || [])) {
+      for (const ayah of this.ayaat) {
+        if (this.arNorm[ayah.id].split(/\s+/).includes(normWord)) {
+          addScore(ayah.id, 30, 'patterns', normWord);
+          exactSet.add(ayah.id);
+        }
+      }
+    }
+
     // ── Build & rank ──────────────────────────────────────────────────────
     let results = Object.entries(scores).map(([idStr, score]) => {
       const id = +idStr;
@@ -201,9 +213,24 @@ class QuranSearch {
       results = results.filter(r => r.ayah.juz === +filters.juz);
     }
 
-    results.sort((a, b) => b.score - a.score || a.ayah.id - b.ayah.id);
+    // When exact words were searched: exact matches first in Quran order,
+    // then other BM25/root matches by score. This makes "list all X" queries comprehensive.
+    if (exactSet.size > 0) {
+      const exactResults = results.filter(r => exactSet.has(r.ayah.id))
+        .sort((a, b) => a.ayah.id - b.ayah.id);
+      const otherResults = results.filter(r => !exactSet.has(r.ayah.id))
+        .sort((a, b) => b.score - a.score);
+      results = [...exactResults, ...otherResults];
+    } else {
+      results.sort((a, b) => b.score - a.score || a.ayah.id - b.ayah.id);
+    }
 
-    return { results: results.slice(0, limit), arabicQuery, extractedRoots: translationRoots };
+    return {
+      results:        results.slice(0, limit),
+      arabicQuery,
+      extractedRoots: translationRoots,
+      exactCount:     exactSet.size,
+    };
   }
 
   // ── Translation API ───────────────────────────────────────────────────────

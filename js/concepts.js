@@ -22,6 +22,128 @@ const STOP_WORDS = new Set([
 ]);
 
 /**
+ * Exact Arabic word forms for key Islamic terms.
+ * When a user query contains one of these terms, the search finds ayaat containing
+ * the EXACT normalized Arabic word(s) — not just the root — and surfaces them first
+ * in Quran order. This powers precise "list all instances of X" queries.
+ *
+ * All strings are pre-normalized (no diacritics, ى→ي, ة→ه, أإآ→ا).
+ */
+const EXACT_WORDS = {
+  // ── Names / Attributes of Allah ────────────────────────────────────────
+  'al-hakeem':    ['الحكيم', 'حكيم'],
+  'hakeem':       ['الحكيم', 'حكيم'],
+  'al-aleem':     ['العليم', 'عليم'],
+  'aleem':        ['العليم', 'عليم'],
+  'al-aziz':      ['العزيز', 'عزيز'],
+  'aziz':         ['العزيز', 'عزيز'],
+  'al-ghafur':    ['الغفور', 'غفور'],
+  'ghafur':       ['الغفور', 'غفور'],
+  'al-rahman':    ['الرحمن'],
+  'al-raheem':    ['الرحيم', 'رحيم'],
+  'al-qadir':     ['القدير', 'قدير'],
+  'al-karim':     ['الكريم', 'كريم'],
+  'al-haleem':    ['الحليم', 'حليم'],
+  'al-baseer':    ['البصير', 'بصير'],
+  'al-samee':     ['السميع', 'سميع'],
+  'al-tawwab':    ['التواب', 'تواب'],
+  'al-wahhab':    ['الوهاب', 'وهاب'],
+  'al-razzaq':    ['الرزاق', 'رزاق'],
+  'al-fattah':    ['الفتاح'],
+  'asma ul husna': ['الحسني', 'اسماءه'],
+
+  // ── Quranic commands ────────────────────────────────────────────────────
+  'qul':          ['قل'],
+  'say':          ['قل'],
+
+  // ── Groups / categories of people ───────────────────────────────────────
+  'muttaqoon':    ['المتقين', 'المتقون', 'متقين', 'متقون'],
+  'muttaqun':     ['المتقين', 'المتقون', 'متقين'],
+  'muttaqi':      ['المتقي', 'متقي'],
+  'muhsineen':    ['المحسنين', 'المحسنون', 'محسنين'],
+  'muhsinin':     ['المحسنين', 'المحسنون'],
+  'muflihoon':    ['المفلحون', 'المفلحين', 'مفلحون'],
+  'muflihun':     ['المفلحون', 'المفلحين'],
+  'munafiqoon':   ['المنافقون', 'المنافقين', 'منافقون'],
+  'munafiqun':    ['المنافقون', 'المنافقين'],
+  'sadiqeen':     ['الصادقين', 'الصادقون', 'صادقين'],
+  'siddiqeen':    ['الصديقين', 'الصديقون'],
+  'sadihin':      ['الصادقين', 'صادقين'],
+  'abrar':        ['الابرار', 'ابرار'],
+  'rabbaniyin':   ['ربانيين', 'ربانيون', 'رباني'],
+  'ulul albab':   ['الالباب', 'لباب'],
+  'ulul-albab':   ['الالباب', 'لباب'],
+  'ahl al-ilm':   ['العلم', 'اهل العلم'],
+  'kafiroon':     ['الكافرون', 'الكافرين'],
+  'fasiqoon':     ['الفاسقون', 'الفاسقين'],
+  'zalimoon':     ['الظالمون', 'الظالمين'],
+  'mushrikoon':   ['المشركون', 'المشركين'],
+
+  // ── Prophets (exact name lookup) ─────────────────────────────────────────
+  'musa':         ['موسي'],
+  'isa':          ['عيسي'],
+  'ibrahim':      ['ابراهيم'],
+  'yusuf':        ['يوسف'],
+  'muhammad':     ['محمد', 'احمد'],
+  'nuh':          ['نوح'],
+  'dawud':        ['داود'],
+  'sulayman':     ['سليمان'],
+  'yahya':        ['يحيي'],
+  'zakariya':     ['زكريا'],
+  'harun':        ['هارون'],
+  'ayyub':        ['ايوب'],
+  'yunus':        ['يونس'],
+  'lut':          ['لوط'],
+  'hud':          ['هود'],
+  'salih':        ['صالح'],
+  'shuaib':       ['شعيب'],
+  'maryam':       ['مريم'],
+  'idris':        ['ادريس'],
+  'ilyas':        ['الياس'],
+  'adam':         ['ادم'],
+
+  // ── Key Quranic concepts (precise word forms) ────────────────────────────
+  'ahd':          ['عهد', 'العهد', 'عهده', 'عهودهم'],
+  'mithaq':       ['ميثاق', 'الميثاق', 'مواثيقهم'],
+  'covenant':     ['عهد', 'العهد', 'ميثاق'],
+  'amthal':       ['مثل', 'مثلا', 'الامثال'],
+  'parable':      ['مثل', 'مثلا'],
+  'parables':     ['مثل', 'الامثال'],
+  'birr':         ['البر'],
+  'al-birr':      ['البر'],
+  'falah':        ['الفلاح', 'يفلحون', 'افلح', 'المفلحون'],
+  'khusran':      ['الخسران', 'خسروا', 'خاسرين', 'الخاسرين'],
+  'huzn':         ['الحزن', 'حزن', 'حزنا'],
+  'khawf':        ['الخوف', 'خوف', 'تخافون'],
+  'noor':         ['النور', 'نور'],
+  'zulumat':      ['الظلمات', 'ظلمات'],
+  'kalam':        ['كلام', 'كلمات', 'كلمه', 'كلمت'],
+  'kalam allah':  ['كلمات', 'كلمه'],
+  'talaq':        ['الطلاق', 'طلاق', 'طلقتم', 'طلقوهن'],
+  'riba':         ['الربا', 'ربا'],
+  'nabi':         ['نبي', 'النبيين', 'نبيا'],
+  'rasool':       ['رسول', 'الرسل', 'رسولا'],
+  'rasul':        ['رسول', 'الرسل'],
+  'wali':         ['ولي', 'اولياء', 'الاولياء'],
+  'taqwa':        ['التقوي', 'تقواه', 'تقوي'],
+  'muamalat':     ['المعاملات', 'تعاملون'],
+  'dua':          ['دعاء', 'الدعاء', 'ادعو', 'يدعون'],
+  'zakat':        ['الزكاه', 'زكاه', 'الزكاه'],
+  'salah':        ['الصلاه', 'صلاه', 'الصلوه'],
+  'jannah':       ['الجنه', 'جنه', 'جنات'],
+  'naar':         ['النار', 'نار'],
+  'sabr':         ['الصبر', 'صبر', 'اصبروا'],
+  'shukr':        ['الشكر', 'شكر', 'يشكرون'],
+  'tawbah':       ['التوبه', 'توبه', 'يتوبون'],
+  'hubb':         ['حب', 'يحب', 'يحبون'],
+  'yuhib':        ['يحب', 'يحبهم', 'يحبون'],
+  'la yuhibb':    ['لا يحب'],
+  'yuhibbu':      ['يحب'],
+  'loves':        ['يحب', 'يحبون'],
+  'does not love': ['لا يحب'],
+};
+
+/**
  * Transliteration map — expands Islamic/Arabic/Urdu terms into English keywords + roots.
  * Used as a fast-path boost on top of the translation pipeline.
  */
@@ -297,6 +419,52 @@ const TRANSLITERATIONS = {
   'jabbar':     { english: ['compeller','omnipotent'], roots: ['ج ب ر'] },
   'mutakabbir': { english: ['supreme','majestic'], roots: ['ك ب ر'] },
   'musawwir':   { english: ['fashioner','shaper of forms'], roots: ['ص و ر'] },
+
+  // ── Quranic commands ─────────────────────────────────────────────────────
+  'qul':          { english: ['say','command','commanded to say'], roots: ['ق و ل'] },
+
+  // ── Groups / categories ──────────────────────────────────────────────────
+  'muttaqoon':    { english: ['pious','god-conscious','righteous'], roots: ['و ق ي'] },
+  'muttaqun':     { english: ['pious','righteous'], roots: ['و ق ي'] },
+  'muttaqi':      { english: ['pious','god-fearing'], roots: ['و ق ي'] },
+  'muhsineen':    { english: ['good doers','excellent deeds'], roots: ['ح س ن'] },
+  'muhsinin':     { english: ['good doers'], roots: ['ح س ن'] },
+  'muflihoon':    { english: ['successful','those who succeed'], roots: ['ف ل ح'] },
+  'muflihun':     { english: ['successful','salvation'], roots: ['ف ل ح'] },
+  'sadiqeen':     { english: ['truthful','sincere'], roots: ['ص د ق'] },
+  'siddiqeen':    { english: ['most truthful','veracious'], roots: ['ص د ق'] },
+  'sadihin':      { english: ['truthful','honest'], roots: ['ص د ق'] },
+  'abrar':        { english: ['righteous','virtuous','good'], roots: ['ب ر ر'] },
+  'rabbaniyin':   { english: ['godly scholars','learned in religion'], roots: ['ر ب ب'] },
+  'ulul albab':   { english: ['people of understanding','people of intellect'], roots: ['ل ب ب'] },
+  'ulul-albab':   { english: ['people of understanding'], roots: ['ل ب ب'] },
+  'kafiroon':     { english: ['disbelievers','rejecters'], roots: ['ك ف ر'] },
+  'fasiqoon':     { english: ['transgressors','disobedient'], roots: ['ف س ق'] },
+  'zalimoon':     { english: ['wrongdoers','oppressors'], roots: ['ظ ل م'] },
+
+  // ── Specific Quranic concepts ─────────────────────────────────────────────
+  'amthal':       { english: ['parables','analogies','similitudes'], roots: ['م ث ل'] },
+  'parable':      { english: ['analogy','similitude','example'], roots: ['م ث ل'] },
+  'parables':     { english: ['analogies','similitudes'], roots: ['م ث ل'] },
+  'ahd':          { english: ['covenant','promise','pledge','agreement'], roots: ['ع ه د'] },
+  'mithaq':       { english: ['solemn covenant','pledge'], roots: ['م ي ث'] },
+  'covenant':     { english: ['pledge','agreement','ahd'], roots: ['ع ه د','م ي ث'] },
+  'birr':         { english: ['righteousness','piety','virtue','goodness'], roots: ['ب ر ر'] },
+  'al-birr':      { english: ['true righteousness','piety'], roots: ['ب ر ر'] },
+  'falah':        { english: ['success','prosperity','salvation'], roots: ['ف ل ح'] },
+  'khusran':      { english: ['loss','ruin','failure','doom'], roots: ['خ س ر'] },
+  'huzn':         { english: ['grief','sorrow','sadness','distress'], roots: ['ح ز ن'] },
+  'khawf':        { english: ['fear','anxiety','apprehension'], roots: ['خ و ف'] },
+  'zulumat':      { english: ['darkness','ignorance','disbelief'], roots: ['ظ ل م'] },
+  'kalam':        { english: ['word','speech','discourse'], roots: ['ك ل م'] },
+  'kalam allah':  { english: ['word of allah','speech of god'], roots: ['ك ل م'] },
+  'muamalat':     { english: ['financial transactions','dealings','commerce'], roots: ['ع م ل','ب ي ع','ت ج ر','ع ق د'] },
+  'yuhib':        { english: ['allah loves','loves'], roots: ['ح ب ب'] },
+  'yuhibb':       { english: ['loves'], roots: ['ح ب ب'] },
+  'la yuhibb':    { english: ['does not love','allah does not love'], roots: ['ح ب ب'] },
+  'nabi':         { english: ['prophet','chosen one','prophethood'], roots: ['ن ب و'] },
+  'rasool':       { english: ['messenger','apostle','envoy'], roots: ['ر س ل'] },
+  'rasul':        { english: ['messenger','apostle'], roots: ['ر س ل'] },
 
   // ── Social concepts ───────────────────────────────────────────────────────
   'ummah':      { english: ['community','nation','muslim community','people'], roots: ['ا م م'] },
@@ -1564,6 +1732,7 @@ function parseQuery(rawQuery) {
     intents:        [],
     addresseeIds:   [],
     topicIds:       [],
+    exactWords:     [],   // normalized Arabic word-forms for exact-match boosting
   };
 
   // 1a. Expand concept words → roots (longest match first to avoid partial matches)
@@ -1577,7 +1746,19 @@ function parseQuery(rawQuery) {
     }
   }
 
-  // 1b. Expand transliterations → English keywords + roots
+  // 1b. Exact Arabic word forms — collected for precise word-level boosting
+  const exactKeys = Object.keys(EXACT_WORDS).sort((a, b) => b.length - a.length);
+  for (const term of exactKeys) {
+    const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp('(?:^|[^a-z])' + esc + '(?:$|[^a-z])', 'i').test(q)) {
+      for (const word of EXACT_WORDS[term]) {
+        const norm = normalizeArabic(word);
+        if (norm && !matched.exactWords.includes(norm)) matched.exactWords.push(norm);
+      }
+    }
+  }
+
+  // 1c. Expand transliterations → English keywords + roots
   for (const [term, expansion] of Object.entries(TRANSLITERATIONS)) {
     const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp('(?:^|\\s|[^a-z])' + esc + '(?:$|\\s|[^a-z])', 'i').test(q)) {
@@ -1590,7 +1771,7 @@ function parseQuery(rawQuery) {
     }
   }
 
-  // 2. Detect intents
+  // 1d. Detect intents
   for (const [intent, triggers] of Object.entries(INTENTS)) {
     if (triggers.some(t => q.includes(t))) matched.intents.push(intent);
   }
