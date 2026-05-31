@@ -22,6 +22,134 @@ const STOP_WORDS = new Set([
 ]);
 
 /**
+ * Phrase agents — when a query mentions "people of X" / "those who X",
+ * we want the AGENT FORM of the concept, not the abstract noun.
+ * Example: "people of Taqwa" — user means المتقين (the pious), not التقوى (piety).
+ *
+ * Each entry: trigger phrases (English) → exact Arabic agent-form word(s).
+ * Phrases are matched as substrings (whole-phrase scope, not word-level).
+ * This is the systematic fix for abstract-concept-vs-people-of-concept confusion.
+ */
+const PHRASE_AGENTS = {
+  // ── Taqwa → Muttaqun ────────────────────────────────────────────────────
+  taqwa_people: {
+    phrases: [
+      'people of taqwa', 'people who fear', 'people who have taqwa',
+      'those who fear allah', 'those who fear god', 'those with taqwa',
+      'god-fearing people', 'god-conscious', 'pious ones', 'the pious',
+      'muttaqun', 'muttaqoon', 'muttaqin', 'muttaqi', 'muttaqi people',
+      'al-muttaqun', 'al-muttaqin', 'al-muttaqoon',
+    ],
+    words:  ['المتقين', 'المتقون', 'متقين', 'متقون', 'تقي'],
+    roots:  ['و ق ي'],
+  },
+  // ── Iman → Mu'minun ─────────────────────────────────────────────────────
+  iman_people: {
+    phrases: [
+      'people of iman', 'people of faith', 'those who believe',
+      'those who have faith', 'the believers', 'the faithful',
+      'mu\'minun', 'muminun', 'mu\'minin', 'muminin',
+      'al-mu\'minun', 'al-muminun', 'al-mu\'minin',
+    ],
+    words:  ['المؤمنين', 'المؤمنون', 'مؤمنين', 'مؤمنون', 'مؤمن', 'المؤمنات'],
+    roots:  ['ا م ن'],
+  },
+  // ── Ihsan → Muhsinun ────────────────────────────────────────────────────
+  ihsan_people: {
+    phrases: [
+      'people of ihsan', 'those who do good', 'doers of good',
+      'people who do good', 'those who excel', 'the good-doers',
+      'muhsinun', 'muhsineen', 'muhsinin', 'al-muhsinin', 'al-muhsineen',
+    ],
+    words:  ['المحسنين', 'المحسنون', 'محسنين', 'محسنون', 'محسن'],
+    roots:  ['ح س ن'],
+  },
+  // ── Sabr → Sabirun ──────────────────────────────────────────────────────
+  sabr_people: {
+    phrases: [
+      'people of sabr', 'patient ones', 'the patient', 'those who are patient',
+      'sabirun', 'sabireen', 'sabirin', 'al-sabirin', 'al-sabireen',
+    ],
+    words:  ['الصابرين', 'الصابرون', 'صابرين', 'صابرون', 'الصبرين'],
+    roots:  ['ص ب ر'],
+  },
+  // ── Falah → Muflihun ────────────────────────────────────────────────────
+  falah_people: {
+    phrases: [
+      'people of success', 'the successful', 'those who succeed',
+      'those who attain success', 'muflihun', 'muflihoon', 'muflihin',
+      'al-muflihun', 'al-muflihoon',
+    ],
+    words:  ['المفلحون', 'المفلحين', 'مفلحون'],
+    roots:  ['ف ل ح'],
+  },
+  // ── Truthfulness → Sadiqun ──────────────────────────────────────────────
+  sadiq_people: {
+    phrases: [
+      'truthful ones', 'the truthful', 'those who are truthful',
+      'sadiqun', 'sadiqeen', 'sadiqin', 'siddiqun', 'siddiqeen',
+      'al-sadiqun', 'al-sadiqeen',
+    ],
+    words:  ['الصادقين', 'الصادقون', 'صادقين', 'الصديقين'],
+    roots:  ['ص د ق'],
+  },
+  // ── Khasiroon (losers) ──────────────────────────────────────────────────
+  khusran_people: {
+    phrases: [
+      'people of loss', 'the losers', 'those who lose', 'those in loss',
+      'khasiroon', 'khasireen', 'al-khasirin', 'al-khasireen',
+    ],
+    words:  ['الخاسرين', 'الخاسرون', 'خاسرين', 'خاسرون'],
+    roots:  ['خ س ر'],
+  },
+  // ── Disbelievers ────────────────────────────────────────────────────────
+  kufr_people: {
+    phrases: [
+      'people of kufr', 'the disbelievers', 'those who disbelieve',
+      'those who reject', 'kafirun', 'kafiroon', 'kafirin', 'al-kafirun',
+    ],
+    words:  ['الكافرين', 'الكافرون', 'كافرين', 'كافرون', 'كافر'],
+    roots:  ['ك ف ر'],
+  },
+  // ── Hypocrites ──────────────────────────────────────────────────────────
+  nifaq_people: {
+    phrases: [
+      'people of hypocrisy', 'the hypocrites', 'those who are hypocritical',
+      'munafiqun', 'munafiqoon', 'munafiqin', 'al-munafiqun',
+    ],
+    words:  ['المنافقين', 'المنافقون', 'منافقين', 'منافقون'],
+    roots:  ['ن ف ق'],
+  },
+  // ── Zalimun ─────────────────────────────────────────────────────────────
+  zulm_people: {
+    phrases: [
+      'wrongdoers', 'the unjust', 'oppressors', 'transgressors',
+      'those who do wrong', 'zalimun', 'zalimoon', 'al-zalimun', 'al-zalimoon',
+    ],
+    words:  ['الظالمين', 'الظالمون', 'ظالمين', 'ظالمون'],
+    roots:  ['ظ ل م'],
+  },
+  // ── Mushrikoon ──────────────────────────────────────────────────────────
+  shirk_people: {
+    phrases: [
+      'polytheists', 'idolaters', 'those who associate',
+      'mushrikun', 'mushrikoon', 'mushrikin', 'al-mushrikun',
+    ],
+    words:  ['المشركين', 'المشركون', 'مشركين', 'مشركون'],
+    roots:  ['ش ر ك'],
+  },
+  // ── Fasiqoon ────────────────────────────────────────────────────────────
+  fisq_people: {
+    phrases: [
+      'transgressors', 'rebellious', 'the disobedient',
+      'fasiqun', 'fasiqoon', 'fasiqin', 'al-fasiqun',
+    ],
+    words:  ['الفاسقين', 'الفاسقون', 'فاسقين', 'فاسقون'],
+    roots:  ['ف س ق'],
+  },
+};
+
+/**
  * Exact Arabic word forms for key Islamic terms.
  * When a user query contains one of these terms, the search finds ayaat containing
  * the EXACT normalized Arabic word(s) — not just the root — and surfaces them first
@@ -1706,10 +1834,13 @@ const INTENTS = {
 
 /**
  * Normalize Arabic text — mirrors the Python normalize_arabic() for consistent matching.
+ * IMPORTANT: superscript alef (ٰ U+0670) is converted to regular alef before
+ * the diacritic strip, because Quran encodes words like مُنَٰفِق with it.
  */
 function normalizeArabic(text) {
   if (!text) return '';
   return text
+    .replace(/ٰ/g, 'ا')   // superscript alef → regular alef
     .replace(/[ؐ-ًؚ-ٰۖ-ۜ۟-۪ۤۧۨ-ۭݿ]/g, '')
     .replace(/[أإآٱ]/g, 'ا')
     .replace(/ء/g, '')
@@ -1743,6 +1874,22 @@ function parseQuery(rawQuery) {
     if (new RegExp('(?:^|[^a-z])' + esc + '(?:$|[^a-z])', 'i').test(q)) {
       for (const root of CONCEPT_EXPANSIONS[concept]) {
         if (!matched.roots.includes(root)) matched.roots.push(root);
+      }
+    }
+  }
+
+  // 1a-bis. Phrase agents — "people of X" / "those who X" maps to agent forms
+  // (e.g. "people of taqwa" → المتقين, not just التقوى)
+  for (const entry of Object.values(PHRASE_AGENTS)) {
+    const hit = entry.phrases.some(p => q.includes(p.toLowerCase()));
+    if (hit) {
+      for (const w of entry.words) {
+        const norm = normalizeArabic(w);
+        if (norm && !matched.exactWords.includes(norm)) matched.exactWords.push(norm);
+      }
+      for (const root of (entry.roots || [])) {
+        if (!matched.exactRoots.includes(root)) matched.exactRoots.push(root);
+        if (!matched.roots.includes(root))      matched.roots.push(root);
       }
     }
   }

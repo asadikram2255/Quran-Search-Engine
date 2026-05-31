@@ -177,12 +177,15 @@ class QuranSearch {
       }
     }
 
-    // ── Step 6: Exact Arabic word matching ────────────────────────────────
-    // Highest-signal step — finds precise word forms (e.g. الحكيم, قل, المتقين)
-    const exactSet = new Set(); // ayah ids that matched an exact word
+    // ── Step 6: Exact Arabic word matching (prefix-aware) ─────────────────
+    // Generates all attached-prefix variants for each target word so we match
+    // forms like للمتقين, والمتقين, فالمتقين, etc. — not just bare المتقين.
+    const exactSet = new Set();
     for (const normWord of (parsed.exactWords || [])) {
+      const variants = this._arabicVariants(normWord);
       for (const ayah of this.ayaat) {
-        if (this.arNorm[ayah.id].split(/\s+/).includes(normWord)) {
+        const words = this.arNorm[ayah.id].split(/\s+/);
+        if (words.some(w => variants.has(w))) {
           addScore(ayah.id, 30, 'patterns', normWord);
           exactSet.add(ayah.id);
         }
@@ -287,6 +290,46 @@ class QuranSearch {
       }
     }
     return roots;
+  }
+
+  // ── Arabic prefix variants ────────────────────────────────────────────────
+  /**
+   * Generate all attached-prefix variants of a normalized Arabic word so that
+   * an exact-word search for e.g. المتقين also matches للمتقين, والمتقين, etc.
+   *
+   * Quranic prefixes: و (and), ف (then), ل (to/for), ب (by/with), ك (as/like).
+   * Definite article ال attaches to nouns. When ل meets ال, the alef elides:
+   *   ل + ال + متقين → للمتقين
+   */
+  _arabicVariants(word) {
+    const out  = new Set([word]);
+    const hasAl = word.startsWith('ال');
+    const stem  = hasAl ? word.slice(2) : word;
+    if (!stem) return out;
+
+    // Bare stem + al-stem
+    out.add(stem);
+    out.add('ال' + stem);
+
+    // Simple consonant prefixes (و ف ب ك)
+    for (const pfx of ['و', 'ف', 'ب', 'ك']) {
+      out.add(pfx + stem);
+      out.add(pfx + 'ال' + stem);
+    }
+    // ل-prefix with alef elision: ل + ال + X → للX
+    out.add('ل' + stem);
+    out.add('لل' + stem);
+
+    // ل combined with و/ف
+    for (const pfx of ['و', 'ف']) {
+      out.add(pfx + 'ل' + stem);
+      out.add(pfx + 'لل' + stem);
+      out.add(pfx + 'ال' + stem);
+    }
+    // س (future) prefix on verbs
+    out.add('س' + stem);
+
+    return out;
   }
 
   // ── Vocabulary lookup (for terms answer panel) ───────────────────────────

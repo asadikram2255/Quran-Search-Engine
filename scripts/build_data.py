@@ -14,10 +14,13 @@ from collections import defaultdict
 
 
 def normalize_arabic(text):
-    """Mirror the JS normalizeArabic() function exactly for consistent lookups."""
+    """Mirror the JS normalizeArabic() function exactly for consistent lookups.
+    IMPORTANT: superscript alef (U+0670) is converted to regular alef before the
+    diacritic strip — Quran uses it on words like مُنَٰفِق."""
     if not text:
         return ''
-    # Remove tashkeel, superscript alef, Quranic annotation marks
+    text = text.replace('ٰ', 'ا')   # superscript alef → regular alef
+    # Remove tashkeel and Quranic annotation marks
     text = re.sub(r'[ؐ-ًؚ-ٰۖ-ۜ۟-۪ۤۧۨ-ۭݿ]', '', text)
     # Normalize alef variants → plain alef
     text = re.sub(r'[أإآٱ]', 'ا', text)
