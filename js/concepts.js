@@ -1974,6 +1974,30 @@ function parseQuery(rawQuery) {
     }
   }
 
+  // 3b. Vocative shortcut — "O [addressee]" / "ya ayyuha..." short queries
+  // These are ONLY asking for the direct address; don't dilute with generic BM25.
+  // Solution: push the Arabic pattern into exactWords so Step 6 fires (+30, Quran-order)
+  // and set exhaustive=true so the result set is trimmed to only those matches.
+  const vocativePrefix = /^(o |ya ayyuha[l]?\s*|ya\s+ayyuhal\s+)/i;
+  if (vocativePrefix.test(qNorm) && matched.addresseeIds.length > 0) {
+    const afterPrefix = qNorm.replace(vocativePrefix, '').trim();
+    const extraWords  = afterPrefix.split(/\s+/)
+                          .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+    // Only activate when the query is essentially just "O <addressee name>"
+    if (extraWords.length <= 2) {
+      for (const addrId of matched.addresseeIds) {
+        const addr = ADDRESSEES.find(a => a.id === addrId);
+        if (addr) {
+          for (const pat of addr.ar_patterns) {
+            const norm = normalizeArabic(pat);
+            if (norm && !matched.exactWords.includes(norm)) matched.exactWords.push(norm);
+          }
+        }
+      }
+      matched.exhaustive = true;
+    }
+  }
+
   // 4. Detect topics
   for (const topic of TOPICS) {
     const hits = topic.keywords.filter(kwMatch);

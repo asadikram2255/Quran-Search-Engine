@@ -510,12 +510,14 @@ class QuranApp {
     para += `across <strong>${surahSet.size} surah${surahSet.size !== 1 ? 's' : ''}</strong>`;
 
     if (meccanCount > 0 && medinanCount > 0) {
-      para += ` — <span class="place-tag place-mecca">${meccanCount} مَكِّي</span>`;
-      para += ` · <span class="place-tag place-medina">${medinanCount} مَدَنِي</span>`;
+      // dir="ltr" on each tag prevents the browser bidi algorithm from swapping
+      // the number and the Arabic label when rendered inside a LTR paragraph
+      para += ` — <span class="place-tag place-mecca" dir="ltr">${meccanCount}&thinsp;مَكِّي</span>`;
+      para += ` &middot; <span class="place-tag place-medina" dir="ltr">${medinanCount}&thinsp;مَدَنِي</span>`;
     } else if (meccanCount > 0) {
-      para += ` — <span class="place-tag place-mecca">مَكِّي (Meccan)</span> revelation`;
+      para += ` — <span class="place-tag place-mecca" dir="ltr">مَكِّي (Meccan)</span> revelation`;
     } else if (medinanCount > 0) {
-      para += ` — <span class="place-tag place-medina">مَدَنِي (Medinan)</span> revelation`;
+      para += ` — <span class="place-tag place-medina" dir="ltr">مَدَنِي (Medinan)</span> revelation`;
     }
     para += '.';
 
