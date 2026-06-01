@@ -71,83 +71,89 @@
     </div>
   </section>
 
-  <!-- ── Filter bar ───────────────────────────────────────────────────────── -->
-  <div class="filter-bar" id="filter-bar" hidden>
-    <div class="container">
-      <div class="filter-row">
+  <!-- ── App body: sidebar + content pane ─────────────────────────────────── -->
+  <div class="app-body">
+
+    <!-- ── Left sidebar: filters + count + pipeline ──────────────────────── -->
+    <aside class="filter-bar" id="filter-bar" hidden>
+
+      <div class="sidebar-header">
+        <span id="results-count" class="results-count"></span>
+      </div>
+
+      <div class="sidebar-filters">
+        <div class="sidebar-label">Filters</div>
         <div class="filter-controls">
           <select id="filter-place" class="filter-select" title="Filter by place of revelation">
             <option value="">All Revelations</option>
             <option value="Meccan">Meccan</option>
             <option value="Medinan">Medinan</option>
           </select>
-
           <select id="filter-surah" class="filter-select" title="Filter by surah">
             <option value="">All Surahs</option>
           </select>
-
           <select id="filter-juz" class="filter-select" title="Filter by juz">
             <option value="">All Juz</option>
           </select>
-
-          <button id="clear-filters" class="clear-btn">Clear</button>
+          <button id="clear-filters" class="clear-btn">Clear filters</button>
         </div>
-
-        <span id="results-count" class="results-count"></span>
       </div>
 
       <!-- Pipeline info: Arabic translation + roots -->
       <div class="pipeline-info" id="pipeline-info" hidden></div>
-    </div>
-  </div>
 
-  <!-- ── Loading state ────────────────────────────────────────────────────── -->
-  <div class="loading-state" id="loading-state">
-    <div class="loading-spinner"></div>
-    <p id="loading-text">Loading Quran data…</p>
-  </div>
+    </aside>
 
-  <!-- ── Results ──────────────────────────────────────────────────────────── -->
-  <main class="results-section" id="results-section" hidden>
-    <div class="container">
+    <!-- ── Content pane: loading + results ───────────────────────────────── -->
+    <div class="content-pane">
 
-      <!-- Search summary paragraph -->
-      <div class="search-summary" id="search-summary" hidden></div>
-
-      <!-- Answer panel: shown for question-style queries -->
-      <div class="answer-panel" id="answer-panel" hidden></div>
-
-      <div class="results-grid" id="results-grid"></div>
-
-      <div class="load-more-wrapper" id="load-more-wrapper" hidden>
-        <button class="load-more-btn" id="load-more-btn">Load more results</button>
+      <!-- Loading state -->
+      <div class="loading-state" id="loading-state">
+        <div class="loading-spinner"></div>
+        <p id="loading-text">Loading Quran data…</p>
       </div>
 
-      <div class="no-results" id="no-results" hidden>
-        <p class="no-results-title">No ayaat matched your query.</p>
-        <p class="no-results-hint">
-          Try different phrasing — the search translates your query to Arabic and matches
-          root words, so natural questions work well.
-        </p>
-      </div>
+      <!-- Results -->
+      <main class="results-section" id="results-section" hidden>
 
-    </div>
-  </main>
+        <!-- Search summary paragraph -->
+        <div class="search-summary" id="search-summary" hidden></div>
+
+        <!-- Answer panel: shown for question-style queries -->
+        <div class="answer-panel" id="answer-panel" hidden></div>
+
+        <div class="results-grid" id="results-grid"></div>
+
+        <div class="load-more-wrapper" id="load-more-wrapper" hidden>
+          <button class="load-more-btn" id="load-more-btn">Load more results</button>
+        </div>
+
+        <div class="no-results" id="no-results" hidden>
+          <p class="no-results-title">No ayaat matched your query.</p>
+          <p class="no-results-hint">
+            Try different phrasing — the search translates your query to Arabic and matches
+            root words, so natural questions work well.
+          </p>
+        </div>
+
+      </main>
+
+    </div><!-- end .content-pane -->
+
+  </div><!-- end .app-body -->
 
   <!-- ── Footer ───────────────────────────────────────────────────────────── -->
   <footer class="footer">
-    <div class="container">
-      <p>Grounded in authentic Quranic datasets · Arabic root-word aware · Three English translations per ayah</p>
-      <p>
-        <a href="https://github.com/asadikram2255/Quran-Search-Engine" target="_blank" rel="noopener">
-          View on GitHub
-        </a>
-      </p>
-    </div>
+    <p>Grounded in authentic Quranic datasets · Arabic root-word aware · Three English translations per ayah</p>
+    <p>
+      <a href="https://github.com/asadikram2255/Quran-Search-Engine" target="_blank" rel="noopener">
+        View on GitHub
+      </a>
+    </p>
   </footer>
 
-  <script src="js/concepts.js?v=12"></script>
-  <script src="js/search.js?v=12"></script>
-  <script src="js/app.js?v=12"></script>
+  <script src="js/concepts.js?v=13"></script>
+  <script src="js/search.js?v=13"></script>
+  <script src="js/app.js?v=13"></script>
 </body>
 </html>
