@@ -1,0 +1,72 @@
+#!/bin/bash
+# .githooks/post-commit
+# Automatically updates CLAUDE.md after commits that touch source files.
+#
+# Setup (run once per machine after cloning):
+#   git config core.hooksPath .githooks
+#
+# Requires: claude CLI in PATH  (comes with Claude Code)
+
+# ── Guard: don't re-trigger on our own CLAUDE.md update commit ──────────────
+LAST_MSG=$(git log -1 --format='%s' 2>/dev/null)
+if [[ "$LAST_MSG" == "[claudemd]"* ]]; then
+  exit 0
+fi
+
+# ── Only run when source files actually changed ──────────────────────────────
+CHANGED=$(git diff HEAD~1 HEAD --name-only 2>/dev/null \
+  | grep -vE "^CLAUDE\.md$" \
+  | grep -E "\.(js|py|html|css|json)$")
+
+if [ -z "$CHANGED" ]; then
+  exit 0
+fi
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT" || exit 0
+
+COMMIT_MSG=$(git log -1 --format='%s')
+CHANGED_LIST=$(echo "$CHANGED" | tr '\n' ', ' | sed 's/, $//')
+
+echo "[claudemd] Reviewing changes for CLAUDE.md update..."
+
+# ── Ask Claude to produce an updated CLAUDE.md ───────────────────────────────
+# -p  = non-interactive (print) mode — outputs response to stdout
+# Claude reads the changed files and current CLAUDE.md, then outputs
+# the full updated markdown. We capture stdout and write it ourselves.
+NEW_CONTENT=$(claude -p \
+"You are maintaining CLAUDE.md for the Quran Search Engine project.
+
+The latest commit '$COMMIT_MSG' changed these files: $CHANGED_LIST
+
+Your task:
+1. Read the current CLAUDE.md (use the Read tool on CLAUDE.md)
+2. Read the changed source files listed above
+3. Identify any sections of CLAUDE.md that are now inaccurate or incomplete
+4. Output the COMPLETE updated CLAUDE.md with corrections applied
+
+Rules:
+- Only update sections where something genuinely changed (new feature, renamed function, new file, changed behavior, new data structure)
+- Bug fixes and minor tweaks usually don't need a CLAUDE.md update — use judgment
+- Do NOT add a changelog section or note that you updated the file
+- Output ONLY the raw markdown content, nothing else — no explanation, no code fence" \
+  --allowedTools "Read" \
+  2>/dev/null)
+
+# ── Write and commit if content changed ─────────────────────────────────────
+if [ -n "$NEW_CONTENT" ]; then
+  CURRENT=$(cat CLAUDE.md 2>/dev/null)
+  if [ "$NEW_CONTENT" != "$CURRENT" ]; then
+    printf '%s\n' "$NEW_CONTENT" > CLAUDE.md
+    git add CLAUDE.md
+    git commit -m "[claudemd] Update CLAUDE.md after: $COMMIT_MSG" --no-verify \
+      -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+    echo "[claudemd] CLAUDE.md updated and committed."
+  else
+    echo "[claudemd] CLAUDE.md already up to date."
+  fi
+else
+  echo "[claudemd] No response from claude — skipping CLAUDE.md update."
+fi
+
+exit 0
