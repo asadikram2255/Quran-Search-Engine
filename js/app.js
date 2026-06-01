@@ -227,20 +227,31 @@ class QuranApp {
     this._showProgress('translate');
 
     try {
+      // Parse first so we can choose the right search limit
+      const parsed        = parseQuery(query);
+      const useExhaustive = (parsed.exhaustive || parsed.intents.includes('count'))
+                            && parsed.exactWords.length > 0;
+      const searchLimit   = useExhaustive ? 6236 : 200;
+
       const { results, arabicQuery, extractedRoots, exactCount } = await this.engine.search(
-        query, this.filters, 200,
+        query, this.filters, searchLimit,
         step => { if (this._searchGen === myGen) this._showProgress(step); },
       );
 
       // A newer search has started — discard these results entirely
       if (this._searchGen !== myGen) return;
 
-      const parsed     = parseQuery(query);
       const answerType = this._detectAnswerType(query, parsed);
 
       this._lastKeywords = parsed.keywords;
-      this._allResults   = results;
-      this.results       = results;
+
+      // Exhaustive mode: only surface the exact-match hits (all of them, Quran-ordered)
+      const displayResults = (useExhaustive && exactCount > 0)
+        ? results.filter(r => r.isExact)
+        : results;
+
+      this._allResults = displayResults;
+      this.results     = displayResults;
 
       this._hideProgress();
       this._renderPipelineInfo(arabicQuery, extractedRoots);
@@ -258,12 +269,18 @@ class QuranApp {
       document.getElementById('filter-bar').hidden = false;
       document.getElementById('results-section').hidden = false;
 
-      const surahCount = new Set(results.map(r => r.ayah.sn)).size;
-      const exactLabel = exactCount > 0 ? ` · ${exactCount} exact matches` : '';
+      const surahCount = new Set(displayResults.map(r => r.ayah.sn)).size;
+      let countText = '';
+      if (displayResults.length) {
+        if (useExhaustive && exactCount > 0) {
+          countText = `${exactCount} exact occurrences across ${surahCount} surahs`;
+        } else {
+          const exactLabel = exactCount > 0 ? ` · ${exactCount} exact matches` : '';
+          countText = `${displayResults.length} ayaat across ${surahCount} surahs${exactLabel}`;
+        }
+      }
       const countEl = document.getElementById('results-count');
-      countEl.textContent = results.length
-        ? `${results.length} ayaat across ${surahCount} surahs${exactLabel}`
-        : '';
+      countEl.textContent = countText;
 
       document.getElementById('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
 

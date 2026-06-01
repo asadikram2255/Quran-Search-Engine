@@ -266,9 +266,28 @@ const EXACT_WORDS = {
   'hubb':         ['حب', 'يحب', 'يحبون'],
   'yuhib':        ['يحب', 'يحبهم', 'يحبون'],
   'la yuhibb':    ['لا يحب'],
+  'la yuhibbu':   ['لا يحب'],
   'yuhibbu':      ['يحب'],
   'loves':        ['يحب', 'يحبون'],
   'does not love': ['لا يحب'],
+
+  // ── Rabbana / Rabbi supplications ────────────────────────────────────────
+  'rabbana':      ['ربنا'],
+  'rabbi':        ['ربي', 'رب'],
+  'rabb':         ['رب', 'ربنا', 'ربي'],
+
+  // ── Additional commands / phrases ─────────────────────────────────────────
+  'aqimu':        ['اقيموا'],
+  'atiu':         ['اطيعوا'],
+  'ittaqu':       ['اتقوا'],
+  'wadhkuru':     ['واذكروا', 'اذكروا'],
+  'yatadhakkaru': ['يتذكرون', 'تذكرون'],
+  'afala':        ['افلا', 'افلم'],
+
+  // ── Quranic set phrases ───────────────────────────────────────────────────
+  'inna lillahi': ['انا لله'],
+  'hasbunallah':  ['حسبنا الله'],
+  'subhana':      ['سبحان'],
 };
 
 /**
@@ -1825,11 +1844,16 @@ const INTENTS = {
   warn:     ['warn','warning','threat','consequence','punishment for','result of',
               'what happens if','what is the punishment','what does allah warn'],
   count:    ['how many','how many times','how often','count','frequency','number of times',
-              'occurs','appear','appears','mentioned how many'],
+              'occurs','appear','appears','mentioned how many','times is','times does',
+              'times mentioned','all mentions','total mentions','mentioned in quran',
+              'number of ayat','number of verses','times it'],
   story:    ['story','stories','narrative','tale','history','what happened to',
               'incident','event','account of'],
   list:     ['list','enumerate','name all','what are the','give all','show all',
-              'all the','all types','all ways','all terms','all groups'],
+              'all the','all types','all ways','all terms','all groups',
+              'all commands','all duas','all parables','all places','all instances',
+              'all occurrences','list all','full list','complete list','every place',
+              'wherever','all that mention','all that'],
 };
 
 /**
@@ -1856,6 +1880,9 @@ function normalizeArabic(text) {
 function parseQuery(rawQuery) {
   const q = rawQuery.toLowerCase();
 
+  // Normalise hyphens so al-hakeem / al hakeem / alhakeem all hit the same key
+  const qNorm = q.replace(/-/g, ' ');
+
   const matched = {
     keywords:       [],
     arabicPatterns: [],
@@ -1865,13 +1892,14 @@ function parseQuery(rawQuery) {
     topicIds:       [],
     exactWords:     [],   // normalized Arabic word-forms for exact-match boosting
     exactRoots:     [],   // fallback: TRANSLITERATIONS roots for the exact-matched terms
+    exhaustive:     false, // true → caller should retrieve ALL matching ayaat (no top-N cutoff)
   };
 
   // 1a. Expand concept words → roots (longest match first to avoid partial matches)
   const conceptKeys = Object.keys(CONCEPT_EXPANSIONS).sort((a, b) => b.length - a.length);
   for (const concept of conceptKeys) {
     const esc = concept.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp('(?:^|[^a-z])' + esc + '(?:$|[^a-z])', 'i').test(q)) {
+    if (new RegExp('(?:^|[^a-z])' + esc + '(?:$|[^a-z])', 'i').test(qNorm)) {
       for (const root of CONCEPT_EXPANSIONS[concept]) {
         if (!matched.roots.includes(root)) matched.roots.push(root);
       }
@@ -1898,7 +1926,7 @@ function parseQuery(rawQuery) {
   const exactKeys = Object.keys(EXACT_WORDS).sort((a, b) => b.length - a.length);
   for (const term of exactKeys) {
     const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp('(?:^|[^a-z])' + esc + '(?:$|[^a-z])', 'i').test(q)) {
+    if (new RegExp('(?:^|[^a-z])' + esc + '(?:$|[^a-z])', 'i').test(qNorm)) {
       for (const word of EXACT_WORDS[term]) {
         const norm = normalizeArabic(word);
         if (norm && !matched.exactWords.includes(norm)) matched.exactWords.push(norm);
@@ -1917,7 +1945,7 @@ function parseQuery(rawQuery) {
   // 1c. Expand transliterations → English keywords + roots
   for (const [term, expansion] of Object.entries(TRANSLITERATIONS)) {
     const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp('(?:^|\\s|[^a-z])' + esc + '(?:$|\\s|[^a-z])', 'i').test(q)) {
+    if (new RegExp('(?:^|\\s|[^a-z])' + esc + '(?:$|\\s|[^a-z])', 'i').test(qNorm)) {
       for (const eng of expansion.english) {
         if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
       }
@@ -1966,6 +1994,27 @@ function parseQuery(rawQuery) {
   for (const t of tokens) {
     if (!matched.keywords.includes(t)) matched.keywords.push(t);
   }
+
+  // 6. If the query contains Arabic characters, normalise and add directly to exactWords
+  if (/[؀-ۿ]/.test(rawQuery)) {
+    const arWords = normalizeArabic(rawQuery).split(/\s+/).filter(w => w.length > 1);
+    for (const w of arWords) {
+      if (!matched.exactWords.includes(w)) matched.exactWords.push(w);
+    }
+  }
+
+  // 7. Exhaustive mode — user wants ALL instances (not just top-N by relevance)
+  // Triggered by count/frequency intent words OR explicit "list all" / "all X" phrasing
+  const exhaustiveTriggers = [
+    'list all', 'all instances', 'how many times', 'how often',
+    'collect all', 'all occurrences', 'all mentions', 'full list',
+    'complete list', 'every time', 'each time', 'how many',
+    'count all', 'all commands', 'all duas', 'all parables',
+    'all qul', 'all places', 'wherever mentioned', 'total mentions',
+    'times mentioned', 'times is', 'times does', 'all that mention',
+    'all the', 'every instance', 'list every',
+  ];
+  matched.exhaustive = exhaustiveTriggers.some(t => q.includes(t));
 
   matched.keywords       = [...new Set(matched.keywords)];
   matched.arabicPatterns = [...new Set(matched.arabicPatterns)];

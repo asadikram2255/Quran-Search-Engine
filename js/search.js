@@ -177,17 +177,28 @@ class QuranSearch {
       }
     }
 
-    // ── Step 6: Exact Arabic word matching (prefix-aware) ─────────────────
-    // Generates all attached-prefix variants for each target word so we match
-    // forms like للمتقين, والمتقين, فالمتقين, etc. — not just bare المتقين.
+    // ── Step 6: Exact Arabic word/phrase matching ────────────────────────
+    // Single-word entries: generate prefix variants (للمتقين, والمتقين, etc.)
+    // Multi-word entries (e.g. لا يحب, ربنا phrase): substring match in full text.
     const exactSet = new Set();
     for (const normWord of (parsed.exactWords || [])) {
-      const variants = this._arabicVariants(normWord);
-      for (const ayah of this.ayaat) {
-        const words = this.arNorm[ayah.id].split(/\s+/);
-        if (words.some(w => variants.has(w))) {
-          addScore(ayah.id, 30, 'patterns', normWord);
-          exactSet.add(ayah.id);
+      if (normWord.includes(' ')) {
+        // Phrase match — substring inclusion in normalised Arabic
+        for (const ayah of this.ayaat) {
+          if (this.arNorm[ayah.id].includes(normWord)) {
+            addScore(ayah.id, 30, 'patterns', normWord);
+            exactSet.add(ayah.id);
+          }
+        }
+      } else {
+        // Single word — prefix-variant matching
+        const variants = this._arabicVariants(normWord);
+        for (const ayah of this.ayaat) {
+          const words = this.arNorm[ayah.id].split(/\s+/);
+          if (words.some(w => variants.has(w))) {
+            addScore(ayah.id, 30, 'patterns', normWord);
+            exactSet.add(ayah.id);
+          }
         }
       }
     }
@@ -215,8 +226,9 @@ class QuranSearch {
       const id = +idStr;
       const r  = reasons[id] || { roots: new Set(), keywords: new Set(), patterns: new Set() };
       return {
-        ayah: this.ayaatMap[id],
+        ayah:            this.ayaatMap[id],
         score,
+        isExact:         exactSet.has(id),
         matchedRoots:    [...r.roots],
         matchedKeywords: [...r.keywords].filter(k => k && k.length > 2),
         matchedPatterns: [...r.patterns],
