@@ -288,6 +288,29 @@ const EXACT_WORDS = {
   'inna lillahi': ['انا لله'],
   'hasbunallah':  ['حسبنا الله'],
   'subhana':      ['سبحان'],
+
+  // ── Knowledge spectrum (Q6: types of knowing in the Quran) ───────────────
+  'fiqh':              ['الفقه', 'فقه', 'يفقهون', 'تفقهوا'],
+  'tafakkur':          ['يتفكرون', 'تتفكرون', 'يتفكر'],
+  'tadabbur':          ['يتدبرون', 'يتدبر'],
+  'basirah':           ['بصيره', 'بصائر', 'بصيرا'],
+  'bayyinah':          ['البينه', 'بينه', 'بينات'],
+  'burhan':            ['البرهان', 'برهان', 'برهانكم'],
+  'zann':              ['الظن', 'ظن', 'يظنون'],
+  'wahm':              ['وهم', 'اوهام'],
+
+  // ── Sacred numbers (Q9: numerically significant Quranic references) ───────
+  'seven heavens':     ['سبع سماوات'],
+  "sab'a samawat":     ['سبع سماوات'],
+  'seven':             ['سبع', 'سبعه', 'سبعا', 'سبعون', 'سبعين'],
+  'forty':             ['اربعين'],
+  'forty days':        ['اربعين ليله', 'اربعين يوما'],
+  'forty nights':      ['اربعين ليله'],
+  'seventy':           ['سبعين', 'سبعون'],
+  'nineteen':          ['تسعه عشر'],
+  'twelve':            ['اثنا عشر', 'اثني عشر'],
+  'hundred':           ['ماه', 'مائه', 'اماه'],
+  'thousand':          ['الف', 'الفا'],
 };
 
 /**
@@ -667,6 +690,26 @@ const TRANSLITERATIONS = {
   'sham':       { english: ['syria','levant','blessed land'], roots: ['ش ا م'] },
   'tur':        { english: ['mount sinai','mount tur','moses'], roots: ['ط و ر'] },
   'sinai':      { english: ['mount sinai','sinai','moses'], roots: ['ط و ر'] },
+
+  // ── Knowledge spectrum ────────────────────────────────────────────────────
+  'fiqh':       { english: ['jurisprudence','deep understanding','religious knowledge','comprehension'], roots: ['ف ق ه'] },
+  'tafaqquh':   { english: ['learning religion','gain deep understanding','comprehension'], roots: ['ف ق ه'] },
+  'tafakkur':   { english: ['reflection','contemplation','deep thought','pondering'], roots: ['ف ك ر'] },
+  'tadabbur':   { english: ['pondering the Quran','deep reflection','careful consideration'], roots: ['د ب ر'] },
+  'basirah':    { english: ['insight','discernment','spiritual vision','inner sight'], roots: ['ب ص ر'] },
+  'bayyinah':   { english: ['clear proof','manifest evidence','clear signs','plain truth'], roots: ['ب ي ن'] },
+  'bayyinat':   { english: ['clear proofs','manifest evidence','clear signs'], roots: ['ب ي ن'] },
+  'burhan':     { english: ['proof','evidence','argument','clear evidence','demonstration'], roots: ['ب ر ه'] },
+  'zann':       { english: ['conjecture','assumption','speculation','mere supposition','guess'], roots: ['ظ ن ن'] },
+  'wahm':       { english: ['illusion','delusion','false assumption','misconception'], roots: ['و ه م'] },
+  'fikr':       { english: ['thought','thinking','reflection','intellect'], roots: ['ف ك ر'] },
+
+  // ── Sacred numbers ─────────────────────────────────────────────────────────
+  "sab'a":      { english: ['seven','sevenfold'], roots: ['س ب ع'] },
+  'saba':       { english: ['seven','seven heavens'], roots: ['س ب ع'] },
+  'arbaeen':    { english: ['forty','forty days','forty nights'], roots: ['ر ب ع'] },
+  "arba'een":   { english: ['forty'], roots: ['ر ب ع'] },
+  'tis\'a':     { english: ['nine','ninety-nine'], roots: ['ت س ع'] },
 };
 
 /**
@@ -751,6 +794,16 @@ const ADDRESSEES = [
     ],
     ar_patterns: ['المنفقون','المنفقين'],
     description: 'Ayaat about or addressing hypocrites',
+  },
+  {
+    id: 'my_servants',
+    label: "O My Servants (يَا عِبَادِي)",
+    keywords: [
+      'ya ibadi','ya ibad','ibadi','o my servants','my servants',
+      'servants of god','servants of allah',
+    ],
+    ar_patterns: ['يا عبادي','ياعبادي'],
+    description: "Ayaat where Allah directly addresses His servants with يَا عِبَادِي",
   },
 ];
 
@@ -1857,6 +1910,112 @@ const INTENTS = {
 };
 
 /**
+ * Binary concept pairs — complementary Quranic themes often queried together.
+ *
+ * When a query spans both poles of a binary (e.g. "light and darkness"),
+ * parseQuery() pushes both root sets so the root-grouping layer naturally
+ * separates results into two clearly labelled groups.
+ *
+ * Principle: no hardwired answers — the pair only broadens the ROOT set fed
+ * to the retrieval engine. What appears in the results is still grounded in
+ * what the Quran actually contains.
+ *
+ * pairA / pairB:
+ *   label   — Quranic Arabic label (shown in group header)
+ *   roots   — Arabic roots for this pole
+ *   words   — raw Arabic word forms (normalizeArabic() is called on each in parseQuery)
+ */
+const BINARY_CONCEPTS = [
+  {
+    id: 'light_dark',
+    phrases: [
+      'light and dark','light vs dark','noor and zulmat','noor and zulumat',
+      'light and darkness','nur and zulmat','light darkness',
+      'noor darkness','zulumat and noor','noor and dark',
+    ],
+    pairA: { label: 'النور (Light)',          roots: ['ن و ر'],          words: ['النور','نور'] },
+    pairB: { label: 'الظلمات (Darkness)',     roots: ['ظ ل م'],          words: ['الظلمات','ظلمات'] },
+  },
+  {
+    id: 'jannah_naar',
+    phrases: [
+      'paradise and hell','heaven and hell','jannah and naar',
+      'jannah and jahannam','jannah naar','garden and fire',
+      'paradise and hellfire','heaven and hellfire','jannah and fire',
+    ],
+    pairA: { label: 'الجنة (Paradise)',       roots: ['ج ن ن'],          words: ['الجنة','جنات'] },
+    pairB: { label: 'النار / جهنم (Hellfire)', roots: ['ن ا ر','ج ح م'],  words: ['النار','جهنم'] },
+  },
+  {
+    id: 'iman_kufr',
+    phrases: [
+      'faith and disbelief','belief and unbelief','iman and kufr',
+      'belief and kufr','iman kufr','faith disbelief','iman vs kufr',
+      'believing and disbelieving','belief vs disbelief',
+    ],
+    pairA: { label: 'الإيمان (Faith)',        roots: ['ا م ن'],          words: ['الإيمان','آمنوا'] },
+    pairB: { label: 'الكفر (Disbelief)',       roots: ['ك ف ر'],          words: ['الكفر','كفروا'] },
+  },
+  {
+    id: 'guidance_misguidance',
+    phrases: [
+      'guidance and misguidance','huda and dalal','huda and dalalah',
+      'guided and misguided','right path and wrong path',
+      'guidance misguidance','hidayah and dalalah',
+    ],
+    pairA: { label: 'الهدى (Guidance)',        roots: ['ه د ي'],         words: ['الهدى','هدى'] },
+    pairB: { label: 'الضلال (Misguidance)',    roots: ['ض ل ل'],         words: ['الضلال','ضلوا'] },
+  },
+  {
+    id: 'ilm_jahl',
+    phrases: [
+      'knowledge and ignorance','ilm and jahl','knowing and not knowing',
+      'those who know and those who do not','knowledge ignorance','ilm jahl',
+      'who knows and who does not know',
+    ],
+    pairA: { label: 'العلم (Knowledge)',       roots: ['ع ل م'],         words: ['العلم','يعلمون'] },
+    pairB: { label: 'الجهل (Ignorance)',       roots: ['ج ه ل'],         words: ['الجاهلين','جهل'] },
+  },
+  {
+    id: 'sabr_shukr',
+    phrases: [
+      'patience and gratitude','sabr and shukr','patient and grateful',
+      'sabr shukr','endurance and thankfulness',
+    ],
+    pairA: { label: 'الصبر (Patience)',        roots: ['ص ب ر'],         words: ['الصبر','صبروا'] },
+    pairB: { label: 'الشكر (Gratitude)',       roots: ['ش ك ر'],         words: ['الشكر','يشكرون'] },
+  },
+  {
+    id: 'rahmah_azab',
+    phrases: [
+      'mercy and punishment','rahma and azab','mercy and wrath',
+      'compassion and punishment','hope and fear in quran',
+      'reward and punishment','promise and warning',
+    ],
+    pairA: { label: 'الرحمة (Mercy)',          roots: ['ر ح م'],         words: ['الرحمة','رحمة'] },
+    pairB: { label: 'العذاب (Punishment)',     roots: ['ع ذ ب'],         words: ['العذاب','عذاب'] },
+  },
+  {
+    id: 'birr_ithm',
+    phrases: [
+      'righteousness and sin','birr and ithm','virtue and sin',
+      'piety and sin','good and evil in quran',
+    ],
+    pairA: { label: 'البر (Righteousness)',    roots: ['ب ر ر'],         words: ['البر','أبرار'] },
+    pairB: { label: 'الإثم (Sin)',             roots: ['ا ث م'],         words: ['الإثم','آثم'] },
+  },
+  {
+    id: 'dhikr_ghafla',
+    phrases: [
+      'remembrance and heedlessness','dhikr and ghafla','remembrance and forgetfulness',
+      'dhikr ghafla','mindfulness and heedlessness',
+    ],
+    pairA: { label: 'الذكر (Remembrance)',     roots: ['ذ ك ر'],         words: ['الذكر','ذكروا'] },
+    pairB: { label: 'الغفلة (Heedlessness)',   roots: ['غ ف ل'],         words: ['الغافلين','غفلة'] },
+  },
+];
+
+/**
  * Normalize Arabic text — mirrors the Python normalize_arabic() for consistent matching.
  * IMPORTANT: superscript alef (ٰ U+0670) is converted to regular alef before
  * the diacritic strip, because Quran encodes words like مُنَٰفِق with it.
@@ -1893,6 +2052,7 @@ function parseQuery(rawQuery) {
     exactWords:     [],   // normalized Arabic word-forms for exact-match boosting
     exactRoots:     [],   // fallback: TRANSLITERATIONS roots for the exact-matched terms
     exhaustive:     false, // true → caller should retrieve ALL matching ayaat (no top-N cutoff)
+    binaryPairId:   null, // id of matched BINARY_CONCEPTS entry (for grouping hints)
   };
 
   // 1a. Expand concept words → roots (longest match first to avoid partial matches)
@@ -1919,6 +2079,26 @@ function parseQuery(rawQuery) {
         if (!matched.exactRoots.includes(root)) matched.exactRoots.push(root);
         if (!matched.roots.includes(root))      matched.roots.push(root);
       }
+    }
+  }
+
+  // 1a-ter. Binary concept pairs — complementary Quranic themes queried together.
+  // Pushes both poles' roots into matched.roots so root-based grouping separates them.
+  for (const binary of BINARY_CONCEPTS) {
+    if (binary.phrases.some(p => qNorm.includes(p))) {
+      matched.binaryPairId = binary.id;
+      for (const root of binary.pairA.roots) {
+        if (!matched.roots.includes(root)) matched.roots.push(root);
+      }
+      for (const root of binary.pairB.roots) {
+        if (!matched.roots.includes(root)) matched.roots.push(root);
+      }
+      // Push exact word forms for both poles to surface the most relevant ayaat
+      for (const w of [...binary.pairA.words, ...binary.pairB.words]) {
+        const norm = normalizeArabic(w);
+        if (norm && !matched.exactWords.includes(norm)) matched.exactWords.push(norm);
+      }
+      break; // only one binary pair per query
     }
   }
 

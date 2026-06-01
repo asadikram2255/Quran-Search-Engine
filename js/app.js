@@ -556,6 +556,18 @@ class QuranApp {
       para += ` Addressing: ${addrLabels.join(', ')}.`;
     }
 
+    // Binary concept pairs — show both poles explicitly
+    if (parsed && parsed.binaryPairId) {
+      const binary = (typeof BINARY_CONCEPTS !== 'undefined' ? BINARY_CONCEPTS : [])
+        .find(b => b.id === parsed.binaryPairId);
+      if (binary) {
+        para += ` Showing both Quranic poles: `
+          + `<strong dir="rtl" lang="ar">${this._esc(binary.pairA.label)}</strong>`
+          + ` and `
+          + `<strong dir="rtl" lang="ar">${this._esc(binary.pairB.label)}</strong>.`;
+      }
+    }
+
     para += ' The referenced ayaat are grouped below.';
 
     el.innerHTML = `<span class="summary-icon">📖</span><div class="summary-text">${para}</div>`;
@@ -597,6 +609,39 @@ class QuranApp {
     if (!results || !results.length) return [{ label: null, labelAr: null, results: [] }];
 
     const rootMap = this._buildRootToLabel();
+
+    // ── 0. Binary concept pair grouping (highest priority) ─────────────────
+    // When the query spans two complementary Quranic themes (light/dark, faith/disbelief…),
+    // group exactly by those two poles using their Quranic Arabic labels.
+    if (parsed && parsed.binaryPairId) {
+      const BCLIST = (typeof BINARY_CONCEPTS !== 'undefined') ? BINARY_CONCEPTS : [];
+      const binary = BCLIST.find(b => b.id === parsed.binaryPairId);
+      if (binary) {
+        const pairARoots = new Set(binary.pairA.roots);
+        const pairBRoots = new Set(binary.pairB.roots);
+        const groupA = { label: binary.pairA.label, labelAr: '', results: [] };
+        const groupB = { label: binary.pairB.label, labelAr: '', results: [] };
+        const ungrouped = [];
+
+        for (const r of results) {
+          const roots = r.matchedRoots || [];
+          if (roots.some(rt => pairARoots.has(rt))) {
+            groupA.results.push(r);
+          } else if (roots.some(rt => pairBRoots.has(rt))) {
+            groupB.results.push(r);
+          } else {
+            ungrouped.push(r);
+          }
+        }
+
+        const groups = [];
+        if (groupA.results.length) groups.push(groupA);
+        if (groupB.results.length) groups.push(groupB);
+        if (ungrouped.length)
+          groups.push({ label: 'Other references', labelAr: '', results: ungrouped });
+        if (groups.length >= 2) return groups;
+      }
+    }
 
     // ── 1. Root-level grouping ──────────────────────────────────────────────
     const rootGroupMap = {};
