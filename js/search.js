@@ -263,6 +263,7 @@ class QuranSearch {
       arabicQuery,
       extractedRoots: translationRoots,
       exactCount:     exactSet.size,
+      totalMatched:   results.length,   // pre-limit count; used by UI to show "Top N of M"
     };
   }
 

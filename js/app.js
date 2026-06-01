@@ -241,7 +241,7 @@ class QuranApp {
                             && parsed.exactWords.length > 0;
       const searchLimit   = useExhaustive ? 6236 : 200;
 
-      const { results, arabicQuery, extractedRoots, exactCount } = await this.engine.search(
+      const { results, arabicQuery, extractedRoots, exactCount, totalMatched } = await this.engine.search(
         query, this.filters, searchLimit,
         step => { if (this._searchGen === myGen) this._showProgress(step); },
       );
@@ -265,7 +265,7 @@ class QuranApp {
 
       this._hideProgress();
       this._renderPipelineInfo(arabicQuery, extractedRoots);
-      this._renderSummary(displayResults, parsed, exactCount);
+      this._renderSummary(displayResults, parsed, exactCount, totalMatched, searchLimit);
 
       if (answerType === 'addressee_listing') {
         this._answerMode = 'addressee_listing';
@@ -286,8 +286,12 @@ class QuranApp {
         if (useExhaustive && exactCount > 0) {
           countText = `${exactCount} exact occurrences across ${surahCount} surahs`;
         } else {
-          const exactLabel = exactCount > 0 ? ` · ${exactCount} exact matches` : '';
-          countText = `${displayResults.length} ayaat across ${surahCount} surahs${exactLabel}`;
+          const capped     = totalMatched > displayResults.length;
+          const ayahLabel  = capped
+            ? `Top ${displayResults.length} of ${totalMatched} ayaat`
+            : `${displayResults.length} ayaat`;
+          const exactLabel = exactCount > 0 ? ` · ${exactCount} exact` : '';
+          countText = `${ayahLabel} across ${surahCount} surahs${exactLabel}`;
         }
       }
       const countEl = document.getElementById('results-count');
@@ -497,7 +501,7 @@ class QuranApp {
 
   // ── Summary paragraph ────────────────────────────────────────────────────
 
-  _renderSummary(results, parsed, exactCount) {
+  _renderSummary(results, parsed, exactCount, totalMatched, searchLimit) {
     const el = document.getElementById('search-summary');
     if (!results || !results.length) { el.hidden = true; return; }
 
@@ -505,8 +509,13 @@ class QuranApp {
     const meccanCount  = results.filter(r => r.ayah.place === 'Meccan').length;
     const medinanCount = results.filter(r => r.ayah.place === 'Medinan').length;
 
-    // Core sentence
-    let para = `The Quran addresses this in <strong>${results.length} ayaat</strong> `;
+    // Core sentence — show real total when results were capped at the search limit
+    const capped = totalMatched != null && searchLimit != null && totalMatched > results.length;
+    const ayahCount = capped
+      ? `<strong>${totalMatched} ayaat</strong> (showing top ${results.length})`
+      : `<strong>${results.length} ayaat</strong>`;
+
+    let para = `The Quran addresses this in ${ayahCount} `;
     para += `across <strong>${surahSet.size} surah${surahSet.size !== 1 ? 's' : ''}</strong>`;
 
     if (meccanCount > 0 && medinanCount > 0) {
