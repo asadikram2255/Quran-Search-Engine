@@ -11,7 +11,12 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(python -c \"import sys; [print\\(repr\\(l\\)\\) for l in sys.stdin]\")"
+      "Bash(python -c \"import sys; [print\\(repr\\(l\\)\\) for l in sys.stdin]\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(git update-index *)",
+      "Bash(git config *)",
+      "Bash(echo \"hooksPath = $\\(git config core.hooksPath\\)\")"
     ]
   }
 }
