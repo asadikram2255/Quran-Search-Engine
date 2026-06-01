@@ -13,12 +13,17 @@ class QuranApp {
     this.results        = [];
     this.page           = 0;
     this.filters        = { place: '', surah: '', juz: '' };
-    this.dark           = localStorage.getItem('theme') === 'dark';
-    this._lastQuery     = '';
-    this._lastKeywords  = [];
-    this._answerMode    = null;   // null | 'addressee_listing'
-    this._activeFilter  = null;  // addressee id currently selected in answer panel
-    this._allResults    = [];    // unfiltered results (for answer-panel switching)
+    this.dark            = localStorage.getItem('theme') === 'dark';
+    this._lastQuery      = '';
+    this._lastKeywords   = [];
+    this._lastParsed     = null;   // last parseQuery() result — shared across re-renders
+    this._answerMode     = null;   // null | 'addressee_listing'
+    this._activeFilter   = null;   // addressee id currently selected in answer panel
+    this._allResults     = [];     // unfiltered results (for answer-panel switching)
+    this._flatResults    = [];     // flat list: headers + result items for _renderPage
+    this._flatIdx        = 0;      // current position in _flatResults during pagination
+    this._renderedCount  = 0;      // number of result cards rendered so far
+    this._rootToLabel    = null;   // lazy cache: root → { ar, en }
   }
 
   // ── Init ─────────────────────────────────────────────────────────────────
@@ -215,10 +220,13 @@ class QuranApp {
     this._activeFilter = null;
     this._allResults   = [];
 
-    // Hard-reset the answer panel immediately — clear HTML so stale content never bleeds
+    // Hard-reset panels immediately — clear HTML so stale content never bleeds
     const answerPanel = document.getElementById('answer-panel');
     answerPanel.hidden    = true;
     answerPanel.innerHTML = '';
+    const summaryEl = document.getElementById('search-summary');
+    summaryEl.hidden    = true;
+    summaryEl.innerHTML = '';
 
     document.getElementById('search-section').classList.add('compact');
     document.getElementById('filter-bar').hidden     = true;
@@ -244,17 +252,20 @@ class QuranApp {
       const answerType = this._detectAnswerType(query, parsed);
 
       this._lastKeywords = parsed.keywords;
+      this._lastParsed   = parsed;
 
       // Exhaustive mode: only surface the exact-match hits (all of them, Quran-ordered)
       const displayResults = (useExhaustive && exactCount > 0)
         ? results.filter(r => r.isExact)
         : results;
 
-      this._allResults = displayResults;
-      this.results     = displayResults;
+      this._allResults  = displayResults;
+      this.results      = displayResults;
+      this._flatResults = this._buildFlatResults(displayResults, parsed);
 
       this._hideProgress();
       this._renderPipelineInfo(arabicQuery, extractedRoots);
+      this._renderSummary(displayResults, parsed, exactCount);
 
       if (answerType === 'addressee_listing') {
         this._answerMode = 'addressee_listing';
@@ -410,10 +421,12 @@ class QuranApp {
       this._activeFilter = null;
       panel.querySelectorAll('.addr-card').forEach(b => b.classList.remove('selected'));
       document.getElementById('addr-filter-label').textContent = 'Click any term to filter the results below';
-      this.results = this._allResults;
+      this.results      = this._allResults;
+      this._flatResults = this._buildFlatResults(this._allResults, this._lastParsed);
       this._updateResultsCount(this.results.length);
       this.page = 0;
       this._renderPage(false);
+      this._renderSummary(this._allResults, this._lastParsed, 0);
       return;
     }
 
@@ -434,9 +447,11 @@ class QuranApp {
 
     document.getElementById('addr-filter-label').textContent = label;
     this._updateResultsCount(filtered.length);
-    this.results = filtered;
-    this.page    = 0;
+    this.results      = filtered;
+    this._flatResults = this._buildFlatResults(filtered, this._lastParsed);
+    this.page         = 0;
     this._renderPage(false);
+    this._renderSummary(filtered, this._lastParsed, filtered.length);
   }
 
   _updateResultsCount(n) {
@@ -451,7 +466,11 @@ class QuranApp {
     const noRes    = document.getElementById('no-results');
     const moreWrap = document.getElementById('load-more-wrapper');
 
-    if (!append) grid.innerHTML = '';
+    if (!append) {
+      grid.innerHTML      = '';
+      this._flatIdx       = 0;
+      this._renderedCount = 0;
+    }
 
     if (this.results.length === 0) {
       noRes.hidden    = false;
@@ -460,11 +479,246 @@ class QuranApp {
     }
     noRes.hidden = true;
 
-    const start = this.page * PAGE_SIZE;
-    const slice = this.results.slice(start, start + PAGE_SIZE);
-    for (const r of slice) grid.appendChild(this._buildCard(r));
+    // Walk the flat list (headers + results) until PAGE_SIZE result cards rendered
+    let rendered = 0;
+    while (this._flatIdx < this._flatResults.length && rendered < PAGE_SIZE) {
+      const item = this._flatResults[this._flatIdx++];
+      if (item.type === 'header') {
+        grid.appendChild(this._buildGroupHeader(item));
+      } else {
+        grid.appendChild(this._buildCard(item.result));
+        rendered++;
+        this._renderedCount++;
+      }
+    }
 
-    moreWrap.hidden = (this.page + 1) * PAGE_SIZE >= this.results.length;
+    moreWrap.hidden = this._renderedCount >= this.results.length;
+  }
+
+  // ── Summary paragraph ────────────────────────────────────────────────────
+
+  _renderSummary(results, parsed, exactCount) {
+    const el = document.getElementById('search-summary');
+    if (!results || !results.length) { el.hidden = true; return; }
+
+    const surahSet     = new Set(results.map(r => r.ayah.sn));
+    const meccanCount  = results.filter(r => r.ayah.place === 'Meccan').length;
+    const medinanCount = results.filter(r => r.ayah.place === 'Medinan').length;
+
+    // Core sentence
+    let para = `The Quran addresses this in <strong>${results.length} ayaat</strong> `;
+    para += `across <strong>${surahSet.size} surah${surahSet.size !== 1 ? 's' : ''}</strong>`;
+
+    if (meccanCount > 0 && medinanCount > 0) {
+      para += ` — <span class="place-tag place-mecca">${meccanCount} مَكِّي</span>`;
+      para += ` · <span class="place-tag place-medina">${medinanCount} مَدَنِي</span>`;
+    } else if (meccanCount > 0) {
+      para += ` — <span class="place-tag place-mecca">مَكِّي (Meccan)</span> revelation`;
+    } else if (medinanCount > 0) {
+      para += ` — <span class="place-tag place-medina">مَدَنِي (Medinan)</span> revelation`;
+    }
+    para += '.';
+
+    // Exact term count
+    if (exactCount > 0 && exactCount < results.length) {
+      para += ` Of these, <strong>${exactCount}</strong> contain the exact Quranic term.`;
+    }
+
+    // Matched Quranic topics (Arabic labels from TOPICS)
+    const topicLabels = (parsed && parsed.topicIds || []).map(id => {
+      const t = TOPICS.find(tp => tp.id === id);
+      if (!t) return null;
+      const arMatch = t.label.match(/\(([^)]+)\)/);
+      const ar = arMatch ? arMatch[1] : '';
+      const en = t.label.replace(/\s*\([^)]*\)/, '').trim();
+      return ar
+        ? `<span class="pi-arabic" dir="rtl">${this._esc(ar)}</span> (${this._esc(en)})`
+        : this._esc(en);
+    }).filter(Boolean).slice(0, 4);
+
+    if (topicLabels.length) {
+      para += ` Quranic themes: ${topicLabels.join(' · ')}.`;
+    }
+
+    // Matched addressees (Arabic vocative form)
+    const addrLabels = (parsed && parsed.addresseeIds || []).map(id => {
+      const a = ADDRESSEES.find(ad => ad.id === id);
+      if (!a) return null;
+      const arMatch = a.label.match(/\(([^)]+)\)/);
+      return arMatch
+        ? `<span class="pi-arabic" dir="rtl">${this._esc(arMatch[1])}</span>`
+        : this._esc(a.label.replace(/\s*\([^)]*\)/, '').trim());
+    }).filter(Boolean);
+
+    if (addrLabels.length) {
+      para += ` Addressing: ${addrLabels.join(', ')}.`;
+    }
+
+    para += ' The referenced ayaat are grouped below.';
+
+    el.innerHTML = `<span class="summary-icon">📖</span><div class="summary-text">${para}</div>`;
+    el.hidden = false;
+  }
+
+  // ── Grouping ──────────────────────────────────────────────────────────────
+
+  /**
+   * Build the flat array that _renderPage() consumes:
+   * [{ type:'header', label, labelAr, count }, { type:'result', result }, …]
+   */
+  _buildFlatResults(results, parsed) {
+    const groups = this._groupResults(results, parsed);
+    const flat   = [];
+    for (const g of groups) {
+      if (g.label) {
+        flat.push({ type: 'header', label: g.label, labelAr: g.labelAr || '', count: g.results.length });
+      }
+      for (const r of g.results) {
+        flat.push({ type: 'result', result: r });
+      }
+    }
+    return flat;
+  }
+
+  /**
+   * Determine the best grouping for the given results.
+   *
+   * Priority:
+   *  1. Multiple distinct Arabic roots (2–6) → group by root  (best for Dhikr, Knowledge, etc.)
+   *  2. Multiple matched TOPICS (2–5)        → group by topic
+   *  3. Meccan + Medinan both present        → group by revelation period
+   *  4. Fallback                             → single unlabelled group
+   *
+   * All group labels use Quranic Arabic terms from TOPICS / ADDRESSEES / the root itself.
+   */
+  _groupResults(results, parsed) {
+    if (!results || !results.length) return [{ label: null, labelAr: null, results: [] }];
+
+    const rootMap = this._buildRootToLabel();
+
+    // ── 1. Root-level grouping ──────────────────────────────────────────────
+    const rootGroupMap = {};
+    const noRootBucket = [];
+
+    for (const r of results) {
+      const primaryRoot = (r.matchedRoots || []).find(rt => rootMap[rt]);
+      if (primaryRoot) {
+        if (!rootGroupMap[primaryRoot]) {
+          const info = rootMap[primaryRoot];
+          rootGroupMap[primaryRoot] = { label: info.en, labelAr: info.ar, results: [] };
+        }
+        rootGroupMap[primaryRoot].results.push(r);
+      } else {
+        noRootBucket.push(r);
+      }
+    }
+
+    const rootGroups = Object.values(rootGroupMap)
+      .sort((a, b) => b.results.length - a.results.length);
+
+    // Use root groups when there are 2–6 distinct roots (avoids noise for broad queries)
+    if (rootGroups.length >= 2 && rootGroups.length <= 6) {
+      if (noRootBucket.length) {
+        rootGroups.push({ label: 'Other references', labelAr: '', results: noRootBucket });
+      }
+      return rootGroups;
+    }
+
+    // ── 2. Topic-level grouping (when too many roots or no root hits) ──────
+    const topicGroupMap = {};
+    const topicIds      = (parsed && parsed.topicIds) || [];
+
+    if (topicIds.length >= 2) {
+      for (const r of results) {
+        let placed = false;
+        for (const tid of topicIds) {
+          const topic = TOPICS.find(t => t.id === tid);
+          if (!topic) continue;
+          if ((r.matchedRoots || []).some(rt => topic.roots.includes(rt))) {
+            if (!topicGroupMap[tid]) {
+              const arMatch = topic.label.match(/\(([^)]+)\)/);
+              topicGroupMap[tid] = {
+                label:   topic.label.replace(/\s*\([^)]*\)/, '').trim(),
+                labelAr: arMatch ? arMatch[1] : '',
+                results: [],
+              };
+            }
+            topicGroupMap[tid].results.push(r);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          if (!topicGroupMap['_other'])
+            topicGroupMap['_other'] = { label: 'Other references', labelAr: '', results: [] };
+          topicGroupMap['_other'].results.push(r);
+        }
+      }
+      const tgArr = Object.values(topicGroupMap)
+        .sort((a, b) => b.results.length - a.results.length);
+      if (tgArr.filter(g => g.label !== 'Other references').length >= 2) return tgArr;
+    }
+
+    // ── 3. Revelation period grouping ──────────────────────────────────────
+    const meccan  = results.filter(r => r.ayah.place === 'Meccan');
+    const medinan = results.filter(r => r.ayah.place === 'Medinan');
+    if (meccan.length > 0 && medinan.length > 0) {
+      return [
+        { label: 'Meccan Revelation', labelAr: 'مَكِّي',  results: meccan  },
+        { label: 'Medinan Revelation', labelAr: 'مَدَنِي', results: medinan },
+      ];
+    }
+
+    // ── 4. No useful grouping ───────────────────────────────────────────────
+    return [{ label: null, labelAr: null, results }];
+  }
+
+  /**
+   * Lazy-build a map: Arabic root → { ar: Arabic label, en: English label }
+   * Labels sourced from TRANSLITERATIONS first (term-quality), then TOPICS.
+   */
+  _buildRootToLabel() {
+    if (this._rootToLabel) return this._rootToLabel;
+    const map = {};
+
+    // TRANSLITERATIONS gives the best per-root label (uses the transliterated term)
+    for (const [, exp] of Object.entries(TRANSLITERATIONS)) {
+      for (const root of exp.roots) {
+        if (!map[root]) {
+          map[root] = { ar: root, en: exp.english[0] };
+        }
+      }
+    }
+
+    // TOPICS fills in any remaining roots with their standardised Arabic label
+    for (const topic of TOPICS) {
+      const arMatch = topic.label.match(/\(([^)]+)\)/);
+      const ar = arMatch ? arMatch[1] : '';
+      const en = topic.label.replace(/\s*\([^)]*\)/, '').trim();
+      for (const root of topic.roots) {
+        if (!map[root]) map[root] = { ar, en };
+      }
+    }
+
+    this._rootToLabel = map;
+    return map;
+  }
+
+  // ── Group header element ──────────────────────────────────────────────────
+
+  _buildGroupHeader(item) {
+    const el        = document.createElement('div');
+    el.className    = 'result-group-header';
+    const arPart    = item.labelAr
+      ? `<span class="group-label-ar" dir="rtl" lang="ar">${this._esc(item.labelAr)}</span>`
+      : '';
+    el.innerHTML    = `
+      <div class="group-label-wrap">
+        ${arPart}
+        <span class="group-label-en">${this._esc(item.label)}</span>
+      </div>
+      <span class="group-count-badge">${item.count} ayaat</span>`;
+    return el;
   }
 
   // ── Build result card ────────────────────────────────────────────────────
