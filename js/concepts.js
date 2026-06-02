@@ -818,6 +818,77 @@ const TRANSLITERATIONS = {
   'munafik':      { english: ['hypocrite','two-faced'], roots: ['ن ف ق'] },
   'gheeba':       { english: ['backbiting','slander','speak ill'], roots: ['غ ي ب'] },
   'takabur':      { english: ['arrogance','haughty','proud'], roots: ['ك ب ر'] },
+
+  // ── Urdu Islamic terms (no Arabic letters → cannot be fuzzy-matched) ─────
+  // These are native Urdu/Persian words commonly used by Urdu-speaking Muslims
+  // when searching for Quranic concepts. They must be mapped explicitly.
+  //
+  // Intercession / recommendation
+  'sifarish':     { english: ['intercession','intercede','shafaah','plead','recommendation'], roots: ['ش ف ع'] },
+  'sifarshi':     { english: ['intercession','intercede'], roots: ['ش ف ع'] },
+  // Love / affection
+  'muhabbat':     { english: ['love','affection','attachment','devotion'], roots: ['ح ب ب'] },
+  'pyar':         { english: ['love','affection','compassion'], roots: ['ح ب ب'] },
+  'ulfat':        { english: ['love','affection','intimacy'], roots: ['ا ل ف'] },
+  'dosti':        { english: ['friendship','friendship with allah','loyal'], roots: ['م و د','و ل ي'] },
+  // Life / death
+  'zindagi':      { english: ['life','living','worldly life'], roots: ['ح ي ي'] },
+  'hayat':        { english: ['life','living'], roots: ['ح ي ي'] },
+  'maut':         { english: ['death','dying','mortality'], roots: ['م و ت'] },
+  'wafat':        { english: ['death','passing','soul taken'], roots: ['م و ت','و ف ي'] },
+  // Goodness / evil
+  'khair':        { english: ['goodness','virtue','charity','blessing'], roots: ['خ ي ر'] },
+  'bhalai':       { english: ['goodness','doing good','righteousness'], roots: ['خ ي ر','ح س ن'] },
+  'burai':        { english: ['evil','wickedness','sin','bad deeds'], roots: ['س و ا','ف س د'] },
+  'shararat':     { english: ['evil','mischief','wickedness'], roots: ['ش ر ر'] },
+  // Hardship / trial
+  'musibat':      { english: ['calamity','affliction','hardship','trial'], roots: ['ص و ب','ب ل و'] },
+  'mushkil':      { english: ['difficulty','hardship','trouble'], roots: ['ع س ر'] },
+  'takleef':      { english: ['hardship','burden','difficulty','obligation'], roots: ['ك ل ف'] },
+  'aazmaish':     { english: ['trial','test','tribulation'], roots: ['ب ل و','ف ت ن'] },
+  // Protection / help
+  'hifazat':      { english: ['protection','safeguarding','preservation'], roots: ['ح ف ظ'] },
+  'madad':        { english: ['help','assistance','aid','support'], roots: ['ن ص ر','ع و ن'] },
+  'himayat':      { english: ['protection','support','backing'], roots: ['ح م ي'] },
+  'panah':        { english: ['refuge','shelter','protection'], roots: ['ع و ذ'] },
+  // Gratitude / patience
+  'shukriya':     { english: ['gratitude','thankfulness','thanks'], roots: ['ش ك ر'] },
+  'sabar':        { english: ['patience','perseverance','steadfast'], roots: ['ص ب ر'] },
+  // Unity / community
+  'ittehad':      { english: ['unity','union','togetherness'], roots: ['و ح د'] },
+  'ittifaq':      { english: ['agreement','unity','consensus'], roots: ['و ف ق'] },
+  // Wealth / provision
+  'daulat':       { english: ['wealth','riches','affluence'], roots: ['م ا ل','ر ز ق'] },
+  'rizq':         { english: ['provision','sustenance','livelihood'], roots: ['ر ز ق'] },
+  // Knowledge / wisdom
+  'ilm':          { english: ['knowledge','learning','scholar'], roots: ['ع ل م'] },
+  'jahalat':      { english: ['ignorance','foolishness','lack of knowledge'], roots: ['ج ه ل'] },
+  'aql':          { english: ['intellect','reason','mind'], roots: ['ع ق ل'] },
+  'fehm':         { english: ['understanding','comprehension'], roots: ['ف ه م'] },
+  // Obedience / disobedience
+  'itaat':        { english: ['obedience','compliance','following'], roots: ['ط و ع'] },
+  'nafarmani':    { english: ['disobedience','defiance','rebellion'], roots: ['ع ص ي'] },
+  'gunah':        { english: ['sin','transgression','wrongdoing'], roots: ['ذ ن ب','ا ث م'] },
+  'tauba':        { english: ['repentance','turning back to allah'], roots: ['ت و ب'] },
+  // Prayer / worship
+  'ibadat':       { english: ['worship','devotion','servitude'], roots: ['ع ب د'] },
+  'bandagi':      { english: ['servitude','worship','devotion'], roots: ['ع ب د'] },
+  // Judgment / reward
+  'insaf':        { english: ['justice','fairness','equity'], roots: ['ع د ل'] },
+  'saza':         { english: ['punishment','penalty','consequence'], roots: ['ع ذ ب','ج ز ي'] },
+  'ajar':         { english: ['reward','recompense','wage'], roots: ['ا ج ر'] },
+  'badla':        { english: ['recompense','retaliation','reward'], roots: ['ج ز ي','ق ص ص'] },
+  // Spiritual states
+  'sukoon':       { english: ['peace','tranquility','serenity','contentment'], roots: ['س ك ن'] },
+  'itminan':      { english: ['contentment','peace of heart','satisfaction'], roots: ['ط م ن'] },
+  'khauf':        { english: ['fear','dread','apprehension'], roots: ['خ و ف'] },
+  'ummeed':       { english: ['hope','expectation','trust'], roots: ['ا م ل','ر ج و'] },
+  'naaumidi':     { english: ['despair','hopelessness'], roots: ['ي ا س'] },
+  'hasrat':       { english: ['regret','longing','grief'], roots: ['ح س ر'] },
+  // Relations / society
+  'rishtedaar':   { english: ['relatives','kinship','family ties'], roots: ['ر ح م','ق ر ب'] },
+  'huqooq':       { english: ['rights','duties','obligations'], roots: ['ح ق ق'] },
+  'zimmedari':    { english: ['responsibility','accountability','duty'], roots: ['ك ل ف','م س ا'] },
 };
 
 /**
