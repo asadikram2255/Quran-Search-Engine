@@ -2426,7 +2426,8 @@ function parseQuery(rawQuery) {
     'times mentioned', 'times is', 'times does', 'all that mention',
     'all the', 'every instance', 'list every',
   ];
-  matched.exhaustive = exhaustiveTriggers.some(t => q.includes(t));
+  // Use ||= so a vocative shortcut that already set exhaustive=true is preserved
+  matched.exhaustive = matched.exhaustive || exhaustiveTriggers.some(t => q.includes(t));
 
   matched.keywords       = [...new Set(matched.keywords)];
   matched.arabicPatterns = [...new Set(matched.arabicPatterns)];

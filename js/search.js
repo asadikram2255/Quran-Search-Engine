@@ -75,17 +75,20 @@ class QuranSearch {
 
   _stem(tok) {
     if (tok.length < 5) return tok;
-    if (tok.endsWith('tion'))  return tok.slice(0, -4);
-    if (tok.endsWith('ness'))  return tok.slice(0, -4);
-    if (tok.endsWith('ment'))  return tok.slice(0, -4);
-    if (tok.endsWith('ing'))   return tok.slice(0, -3);
-    if (tok.endsWith('ful'))   return tok.slice(0, -3);
-    if (tok.endsWith('ed'))    return tok.slice(0, -2);
-    if (tok.endsWith('er'))    return tok.slice(0, -2);
-    if (tok.endsWith('ly'))    return tok.slice(0, -2);
-    if (tok.endsWith('rs'))    return tok.slice(0, -1);
-    if (tok.endsWith('s') && !tok.endsWith('ss')) return tok.slice(0, -1);
-    return tok;
+    let stem = tok;
+    if (tok.endsWith('tion'))  stem = tok.slice(0, -4);
+    else if (tok.endsWith('ness'))  stem = tok.slice(0, -4);
+    else if (tok.endsWith('ment'))  stem = tok.slice(0, -4);
+    else if (tok.endsWith('ing'))   stem = tok.slice(0, -3);
+    else if (tok.endsWith('ful'))   stem = tok.slice(0, -3);
+    else if (tok.endsWith('ed'))    stem = tok.slice(0, -2);
+    else if (tok.endsWith('er'))    stem = tok.slice(0, -2);
+    else if (tok.endsWith('ly'))    stem = tok.slice(0, -2);
+    else if (tok.endsWith('rs'))    stem = tok.slice(0, -1);
+    else if (tok.endsWith('s') && !tok.endsWith('ss')) stem = tok.slice(0, -1);
+    // Reject stems shorter than 3 chars — they are almost always wrong
+    // (e.g. "water"→"wat", "father"→"fath", "class"→"clas")
+    return stem.length >= 3 ? stem : tok;
   }
 
   // ── BM25 ─────────────────────────────────────────────────────────────────
@@ -121,7 +124,14 @@ class QuranSearch {
     let arabicQuery = '';
     let translationRoots = [];
     try {
-      arabicQuery = await this._translateToArabic(rawQuery);
+      // Send only the meaningful content words, not the full question string.
+      // "what are the verses about mercy and forgiveness?" → "mercy forgiveness"
+      // This gives the translation API a cleaner signal and reduces noisy roots.
+      const contentWords = parsed.keywords.filter(k => k.length > 3).slice(0, 6);
+      const translationInput = contentWords.length >= 2
+        ? contentWords.join(' ')
+        : rawQuery.trim();
+      arabicQuery = await this._translateToArabic(translationInput);
       if (arabicQuery) {
         onProgress?.('roots');
         translationRoots = this._extractRootsFromArabic(arabicQuery);
@@ -141,7 +151,7 @@ class QuranSearch {
       for (const ayah of this.ayaat) {
         if (this.arNorm[ayah.id].includes(normPat)) {
           const concept = ADDRESSEES.find(a => a.ar_patterns.includes(pattern));
-          addScore(ayah.id, 18, 'patterns', concept ? concept.label : 'Arabic pattern');
+          addScore(ayah.id, 25, 'patterns', concept ? concept.label : 'Arabic pattern');
         }
       }
     }
@@ -156,8 +166,26 @@ class QuranSearch {
       }
     }
 
-    // ── Step 4: English BM25 (stemmed + direct) ───────────────────────────
-    const allKeywords = [...new Set([...parsed.keywords, ...parsed.keywords.map(k => this._stem(k))])];
+    // ── Step 4: English BM25 (stemmed + direct, with spell correction) ──────
+    // For any keyword not found in the index, find the closest known word
+    // (edit distance ≤ 2) so that "mersy" → "mercy", "patiance" → "patience".
+    // Reuses _editDistance() from concepts.js (loaded before this file).
+    const _corrected = parsed.keywords.map(k => {
+      if (k.length < 5 || this.invIndex[k]) return k;  // short or already known
+      const maxDist = k.length >= 8 ? 2 : 1;
+      let best = k, bestDist = maxDist + 1;
+      for (const key of Object.keys(this.invIndex)) {
+        if (Math.abs(key.length - k.length) > maxDist) continue;
+        const d = _editDistance(k, key, maxDist);
+        if (d < bestDist) { bestDist = d; best = key; }
+        if (bestDist === 1 && maxDist === 1) break; // can't do better
+      }
+      return best;
+    });
+    const allKeywords = [...new Set([
+      ...parsed.keywords, ..._corrected,
+      ...parsed.keywords.map(k => this._stem(k)),
+    ])];
     for (const term of allKeywords) {
       const postings = this.invIndex[term] || {};
       for (const idStr of Object.keys(postings)) {
@@ -297,9 +325,19 @@ class QuranSearch {
     const roots = [];
     const norm  = normalizeArabic(arabicText);
     const words = norm.split(/\s+/).filter(w => w.length > 1);
+    // Common Arabic attached prefixes that translation APIs emit
+    const PREFIXES = ['ال','وال','فال','بال','كال','ولل','فلل','لل','و','ف','ب','ك','ل'];
     for (const word of words) {
-      for (const root of (this.wordRoots[word] || [])) {
-        if (!roots.includes(root)) roots.push(root);
+      // Try the word as-is, then with each prefix stripped
+      const candidates = [word];
+      for (const pfx of PREFIXES) {
+        if (word.startsWith(pfx) && word.length > pfx.length + 1)
+          candidates.push(word.slice(pfx.length));
+      }
+      for (const cand of candidates) {
+        for (const root of (this.wordRoots[cand] || [])) {
+          if (!roots.includes(root)) roots.push(root);
+        }
       }
     }
     return roots;
