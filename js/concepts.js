@@ -2126,6 +2126,101 @@ function normalizeArabic(text) {
     .trim();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fuzzy transliteration lookup — instead of manually adding every spelling
+// variant, we:
+//   1. Normalize both the query word and every TRANSLITERATIONS key to a
+//      canonical form (collapse long vowels, doubled consonants, -ah endings).
+//   2. Build a pre-computed index from canonical → entry at startup (O(1) later).
+//   3. Fall back to Levenshtein fuzzy match (edit distance ≤ 2) so genuinely
+//      misspelled words are still caught.
+//
+// This covers ALL past and future spelling variants automatically.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Collapse the most common Arabic-transliteration spelling variations to a
+ * single canonical form, making comparisons spelling-invariant.
+ *
+ *   Long-vowel collapsing : aa→a, ee/iy/ey→i, oo/ou→u
+ *   Doubled consonants    : kk→k, ll→l, nn→n, ss→s, rr→r, mm→m, tt→t, bb→b
+ *   Taa-marbuta endings   : -ah/-at/-eh → -a  (rahmah→rahma, niyyah→niyya)
+ *   Trailing silent h     : -uh → -u, -ih → -i
+ */
+function _normTranslit(s) {
+  return s.toLowerCase()
+    .replace(/aa/g, 'a')
+    .replace(/ee|iy|ey/g, 'i')
+    .replace(/oo|ou/g, 'u')
+    .replace(/([bcdfghjklmnpqrstvwxyz])\1/g, '$1')  // doubled consonants → single
+    .replace(/ah\b/g, 'a')
+    .replace(/at\b/g, 'a')
+    .replace(/uh\b/g, 'u')
+    .replace(/ih\b/g, 'i');
+}
+
+/**
+ * Levenshtein edit-distance (Wagner-Fischer).
+ * Returns early when the length difference alone exceeds maxDist.
+ */
+function _editDistance(a, b, maxDist) {
+  if (Math.abs(a.length - b.length) > maxDist) return maxDist + 1;
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const curr = [i];
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i - 1] === b[j - 1]
+        ? prev[j - 1]
+        : 1 + Math.min(prev[j], curr[j - 1], prev[j - 1]);
+    }
+    prev = curr;
+  }
+  return prev[n];
+}
+
+// Build canonical-form → TRANSLITERATIONS entry at parse time (runs once).
+// When multiple keys share the same canonical form the first one wins —
+// which is always the "primary" spelling since TRANSLITERATIONS is
+// ordered primary-first by convention.
+const _TRANSLIT_CANON = (() => {
+  const idx = {};
+  for (const [key, val] of Object.entries(TRANSLITERATIONS)) {
+    const canon = _normTranslit(key);
+    if (!idx[canon]) idx[canon] = val;
+  }
+  return idx;
+})();
+
+/**
+ * Look up a single query word against TRANSLITERATIONS using three passes:
+ *   1. Exact key match
+ *   2. Canonical-form match  (handles long-vowel / doubled-consonant variants)
+ *   3. Fuzzy match on canonical forms, edit distance ≤ 1 (len 5-7) or ≤ 2 (len 8+)
+ *
+ * Returns the matching TRANSLITERATIONS entry object, or null.
+ */
+function _lookupTranslit(word) {
+  if (!word || word.length < 4) return null;
+
+  // Pass 1 — exact
+  if (TRANSLITERATIONS[word]) return TRANSLITERATIONS[word];
+
+  // Pass 2 — canonical form
+  const canon = _normTranslit(word);
+  if (_TRANSLIT_CANON[canon]) return _TRANSLIT_CANON[canon];
+
+  // Pass 3 — fuzzy (only for words long enough to avoid false positives)
+  if (word.length < 5) return null;
+  const maxDist = word.length >= 8 ? 2 : 1;
+  let best = null, bestDist = maxDist + 1;
+  for (const [normKey, val] of Object.entries(_TRANSLIT_CANON)) {
+    const d = _editDistance(canon, normKey, maxDist);
+    if (d < bestDist) { bestDist = d; best = val; }
+  }
+  return best;  // null if nothing within threshold
+}
+
 /**
  * Parse a natural-language query into a structured search request.
  */
@@ -2216,9 +2311,29 @@ function parseQuery(rawQuery) {
   }
 
   // 1c. Expand transliterations → English keywords + roots
+  //
+  // Phase A — exact regex match for all keys (handles multi-word keys like
+  //           'allahu akbar', 'la ilaha illallah', 'siratal mustaqeem').
   for (const [term, expansion] of Object.entries(TRANSLITERATIONS)) {
     const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp('(?:^|\\s|[^a-z])' + esc + '(?:$|\\s|[^a-z])', 'i').test(qNorm)) {
+      for (const eng of expansion.english) {
+        if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
+      }
+      for (const root of expansion.roots) {
+        if (!matched.roots.includes(root)) matched.roots.push(root);
+      }
+    }
+  }
+  //
+  // Phase B — fuzzy / canonical-form match on individual query words.
+  // Catches spelling variants that exact regex missed (e.g. 'tawakal', 'dawood',
+  // 'jannat', 'moosa') without requiring manual entry of every variant.
+  const qTokens = qNorm.split(/\s+/);
+  for (const token of qTokens) {
+    if (token.length < 4) continue;
+    const expansion = _lookupTranslit(token);
+    if (expansion) {
       for (const eng of expansion.english) {
         if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
       }
