@@ -227,6 +227,12 @@ class QuranApp {
     const summaryEl = document.getElementById('search-summary');
     summaryEl.hidden    = true;
     summaryEl.innerHTML = '';
+    const bridgeEl = document.getElementById('concept-bridge');
+    bridgeEl.hidden    = true;
+    bridgeEl.innerHTML = '';
+    const rootCardsEl = document.getElementById('root-cards-list');
+    if (rootCardsEl) rootCardsEl.innerHTML = '';
+    document.getElementById('sidebar-roots').hidden = true;
 
     document.getElementById('search-section').classList.add('compact');
     document.getElementById('filter-bar').hidden     = true;
@@ -265,6 +271,8 @@ class QuranApp {
 
       this._hideProgress();
       this._renderPipelineInfo(arabicQuery, extractedRoots);
+      this._renderConceptBridge(query, parsed, arabicQuery, totalMatched, searchLimit, displayResults.length);
+      this._renderSidebarRoots(parsed, extractedRoots);
       this._renderSummary(displayResults, parsed, exactCount, totalMatched, searchLimit);
 
       if (answerType === 'addressee_listing') {
@@ -497,6 +505,163 @@ class QuranApp {
     }
 
     moreWrap.hidden = this._renderedCount >= this.results.length;
+  }
+
+  // ── Concept bridge ───────────────────────────────────────────────────────
+
+  /**
+   * "You searched for ___ → in the Quran this is ___ (Arabic), found in N ayaat"
+   * Always shown; confidence badge reflects how tightly the pipeline mapped the query.
+   */
+  _renderConceptBridge(query, parsed, arabicQuery, totalMatched, searchLimit, displayCount) {
+    const el = document.getElementById('concept-bridge');
+    if (!displayCount) { el.hidden = true; return; }
+
+    const concepts = (parsed && parsed.matchedConcepts) || [];
+
+    // ── Determine overall confidence level ─────────────────────────────────
+    let confidence = 'approximate';
+    let confidenceLabel = '~ Approximate match';
+    if (concepts.some(c => c.confidence === 'exact')) {
+      confidence = 'exact'; confidenceLabel = '🎯 Exact Quranic term';
+    } else if (concepts.some(c => c.confidence === 'concept' || c.confidence === 'canonical')) {
+      confidence = 'concept'; confidenceLabel = '✓ Concept match';
+    }
+
+    // ── Build concept chips ─────────────────────────────────────────────────
+    let conceptsHtml = '';
+    const shownConcepts = concepts.slice(0, 5); // cap at 5 to avoid clutter
+    for (const c of shownConcepts) {
+      const arabicDisplay = c.arabicWords.slice(0, 3).join(' · ');
+      conceptsHtml += `
+        <div class="cb-concept">
+          <span class="cb-concept-label">${this._esc(c.label)}</span>
+          ${arabicDisplay
+            ? `<span class="cb-concept-arabic" dir="rtl" lang="ar">${this._esc(arabicDisplay)}</span>`
+            : ''}
+        </div>`;
+    }
+
+    // Fallback: if no concepts mapped, show the Arabic translation if available
+    if (!conceptsHtml && arabicQuery) {
+      conceptsHtml = `<div class="cb-concept">
+        <span class="cb-concept-label">Arabic translation</span>
+        <span class="cb-concept-arabic" dir="rtl" lang="ar">${this._esc(arabicQuery)}</span>
+      </div>`;
+    }
+
+    // ── Ayah count footer ───────────────────────────────────────────────────
+    const capped = totalMatched > displayCount;
+    const ayahNote = capped
+      ? `Found in <strong>${totalMatched}</strong> ayaat across the Quran (showing top ${displayCount})`
+      : `Found in <strong>${displayCount}</strong> ayaat across the Quran`;
+
+    el.innerHTML = `
+      <div class="cb-row">
+        <span class="cb-label">You searched</span>
+        <span class="cb-query">${this._esc(query)}</span>
+        <span class="cb-confidence ${confidence}">${confidenceLabel}</span>
+      </div>
+      ${conceptsHtml ? `
+      <div class="cb-row">
+        <span class="cb-label">Quranic terms</span>
+        <div class="cb-concepts">${conceptsHtml}</div>
+      </div>` : ''}
+      <div class="cb-footer">${ayahNote} — as shown below</div>
+    `;
+    el.hidden = false;
+  }
+
+  // ── Sidebar root cards ───────────────────────────────────────────────────
+
+  /**
+   * Render root-word cards in the sidebar. Each card shows the Arabic root,
+   * an English gloss, and the ayah count. Clicking opens a modal.
+   */
+  _renderSidebarRoots(parsed, extractedRoots) {
+    const container = document.getElementById('root-cards-list');
+    const section   = document.getElementById('sidebar-roots');
+    if (!container) return;
+
+    // Collect all unique roots: from concept mapping + from translation extraction
+    const allRoots = [...new Set([
+      ...((parsed && parsed.roots) || []),
+      ...(extractedRoots || []),
+    ])].slice(0, 12);  // cap at 12 to keep sidebar clean
+
+    if (!allRoots.length) { section.hidden = true; return; }
+
+    const rootMap = this._buildRootToLabel();
+    container.innerHTML = '';
+
+    for (const root of allRoots) {
+      const label = rootMap[root] || { ar: root, en: '' };
+      // Count ayaat in the engine's root index
+      const count = this.engine.rootIdx[root] ? this.engine.rootIdx[root].size : 0;
+      if (!count) continue;
+
+      const btn = document.createElement('button');
+      btn.className = 'root-card';
+      btn.dataset.root = root;
+      btn.innerHTML = `
+        <span class="root-card-ar" dir="rtl" lang="ar">${this._esc(root)}</span>
+        <span class="root-card-meta">
+          <span class="root-card-en">${this._esc(label.en)}</span>
+          <span class="root-card-count">${count} ayaat</span>
+        </span>`;
+      btn.addEventListener('click', () => this._openRootModal(root, label));
+      container.appendChild(btn);
+    }
+
+    section.hidden = container.children.length === 0;
+  }
+
+  // ── Root modal ───────────────────────────────────────────────────────────
+
+  _openRootModal(root, label) {
+    const overlay = document.getElementById('root-modal-overlay');
+    const title   = document.getElementById('root-modal-title');
+    const body    = document.getElementById('root-modal-body');
+
+    // Count
+    const ids   = this.engine.rootIdx[root] ? [...this.engine.rootIdx[root]] : [];
+    const count = ids.length;
+    const en    = (label && label.en) ? label.en : '';
+
+    title.innerHTML = `
+      <span class="rm-root" dir="rtl" lang="ar">${this._esc(root)}</span>
+      ${en ? `<span class="rm-en">${this._esc(en)}</span>` : ''}
+      <span class="rm-count">${count} ayaat</span>`;
+
+    // Show loading then render
+    body.innerHTML = '<div class="root-modal-loading">Loading…</div>';
+    overlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+
+    // Render after a tick so the modal animates in first
+    requestAnimationFrame(() => {
+      // Sort by Quran order
+      const sorted = ids.sort((a, b) => a - b);
+      body.innerHTML = '';
+      for (const id of sorted) {
+        const ayah = this.engine.ayaatMap[id];
+        if (!ayah) continue;
+        const card = this._buildCard({ ayah, score: 0, matchedRoots: [root], matchedKeywords: [], matchedPatterns: [] });
+        body.appendChild(card);
+      }
+      if (!body.children.length) {
+        body.innerHTML = '<div class="root-modal-loading">No ayaat found.</div>';
+      }
+    });
+
+    // Close handlers
+    const close = () => {
+      overlay.hidden = true;
+      document.body.style.overflow = '';
+    };
+    document.getElementById('root-modal-close').onclick = close;
+    overlay.onclick = e => { if (e.target === overlay) close(); };
+    document.onkeydown = e => { if (e.key === 'Escape') close(); };
   }
 
   // ── Summary paragraph ────────────────────────────────────────────────────

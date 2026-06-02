@@ -2198,27 +2198,36 @@ const _TRANSLIT_CANON = (() => {
  *   2. Canonical-form match  (handles long-vowel / doubled-consonant variants)
  *   3. Fuzzy match on canonical forms, edit distance ≤ 1 (len 5-7) or ≤ 2 (len 8+)
  *
- * Returns the matching TRANSLITERATIONS entry object, or null.
+ * Returns { entry, key, confidence } where confidence is 'exact'|'canonical'|'fuzzy',
+ * or null if no match.
  */
 function _lookupTranslit(word) {
   if (!word || word.length < 4) return null;
 
   // Pass 1 — exact
-  if (TRANSLITERATIONS[word]) return TRANSLITERATIONS[word];
+  if (TRANSLITERATIONS[word]) return { entry: TRANSLITERATIONS[word], key: word, confidence: 'exact' };
 
   // Pass 2 — canonical form
   const canon = _normTranslit(word);
-  if (_TRANSLIT_CANON[canon]) return _TRANSLIT_CANON[canon];
+  if (_TRANSLIT_CANON[canon]) {
+    // Find the original key that produced this canonical form
+    const origKey = Object.keys(TRANSLITERATIONS).find(k => _normTranslit(k) === canon) || word;
+    return { entry: _TRANSLIT_CANON[canon], key: origKey, confidence: 'canonical' };
+  }
 
   // Pass 3 — fuzzy (only for words long enough to avoid false positives)
   if (word.length < 5) return null;
   const maxDist = word.length >= 8 ? 2 : 1;
-  let best = null, bestDist = maxDist + 1;
+  let best = null, bestKey = null, bestDist = maxDist + 1;
   for (const [normKey, val] of Object.entries(_TRANSLIT_CANON)) {
     const d = _editDistance(canon, normKey, maxDist);
-    if (d < bestDist) { bestDist = d; best = val; }
+    if (d < bestDist) {
+      bestDist = d; best = val; bestKey = normKey;
+    }
   }
-  return best;  // null if nothing within threshold
+  if (!best) return null;
+  const origKey = Object.keys(TRANSLITERATIONS).find(k => _normTranslit(k) === bestKey) || bestKey;
+  return { entry: best, key: origKey, confidence: 'fuzzy' };
 }
 
 /**
@@ -2241,6 +2250,9 @@ function parseQuery(rawQuery) {
     exactRoots:     [],   // fallback: TRANSLITERATIONS roots for the exact-matched terms
     exhaustive:     false, // true → caller should retrieve ALL matching ayaat (no top-N cutoff)
     binaryPairId:   null, // id of matched BINARY_CONCEPTS entry (for grouping hints)
+    // Rich concept-mapping data for the concept-bridge UI panel:
+    // Each entry: { key, label, arabicWords[], roots[], confidence, source }
+    matchedConcepts: [],
   };
 
   // 1a. Expand concept words → roots (longest match first to avoid partial matches)
@@ -2314,15 +2326,25 @@ function parseQuery(rawQuery) {
   //
   // Phase A — exact regex match for all keys (handles multi-word keys like
   //           'allahu akbar', 'la ilaha illallah', 'siratal mustaqeem').
+  const _seenTranslitKeys = new Set();
+  const _addConcept = (key, expansion, confidence, source) => {
+    if (_seenTranslitKeys.has(key)) return;
+    _seenTranslitKeys.add(key);
+    for (const eng of expansion.english) {
+      if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
+    }
+    for (const root of expansion.roots) {
+      if (!matched.roots.includes(root)) matched.roots.push(root);
+    }
+    // Collect Arabic word forms for this concept from EXACT_WORDS (if available)
+    const arabicWords = EXACT_WORDS[key] ? [...EXACT_WORDS[key]] : [];
+    matched.matchedConcepts.push({ key, label: key, arabicWords, roots: expansion.roots, confidence, source });
+  };
+
   for (const [term, expansion] of Object.entries(TRANSLITERATIONS)) {
     const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp('(?:^|\\s|[^a-z])' + esc + '(?:$|\\s|[^a-z])', 'i').test(qNorm)) {
-      for (const eng of expansion.english) {
-        if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
-      }
-      for (const root of expansion.roots) {
-        if (!matched.roots.includes(root)) matched.roots.push(root);
-      }
+      _addConcept(term, expansion, 'exact', 'transliteration');
     }
   }
   //
@@ -2332,14 +2354,9 @@ function parseQuery(rawQuery) {
   const qTokens = qNorm.split(/\s+/);
   for (const token of qTokens) {
     if (token.length < 4) continue;
-    const expansion = _lookupTranslit(token);
-    if (expansion) {
-      for (const eng of expansion.english) {
-        if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
-      }
-      for (const root of expansion.roots) {
-        if (!matched.roots.includes(root)) matched.roots.push(root);
-      }
+    const hit = _lookupTranslit(token);
+    if (hit) {
+      _addConcept(hit.key, hit.entry, hit.confidence === 'exact' ? 'exact' : 'concept', 'fuzzy-translit');
     }
   }
 
@@ -2359,6 +2376,16 @@ function parseQuery(rawQuery) {
     if (addr.keywords.some(kwMatch)) {
       matched.addresseeIds.push(addr.id);
       matched.arabicPatterns.push(...addr.ar_patterns);
+      // Record for bridge panel
+      const arMatch = addr.label.match(/\(([^)]+)\)/);
+      matched.matchedConcepts.push({
+        key:         addr.id,
+        label:       addr.label.replace(/\s*\([^)]*\)/, '').trim(),
+        arabicWords: addr.ar_patterns,
+        roots:       [],
+        confidence:  'exact',
+        source:      'addressee',
+      });
     }
   }
 
@@ -2393,6 +2420,18 @@ function parseQuery(rawQuery) {
       matched.topicIds.push(topic.id);
       matched.roots.push(...topic.roots);
       matched.keywords.push(...hits);
+      // Record for bridge panel (only if not already covered by a transliteration)
+      if (!matched.matchedConcepts.some(c => c.roots.some(r => topic.roots.includes(r)))) {
+        const arMatch = topic.label.match(/\(([^)]+)\)/);
+        matched.matchedConcepts.push({
+          key:         topic.id,
+          label:       topic.label.replace(/\s*\([^)]*\)/, '').trim(),
+          arabicWords: arMatch ? [arMatch[1]] : [],
+          roots:       topic.roots,
+          confidence:  'concept',
+          source:      'topic',
+        });
+      }
     }
   }
 

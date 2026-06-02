@@ -74,7 +74,7 @@
   <!-- ── App body: sidebar + content pane ─────────────────────────────────── -->
   <div class="app-body">
 
-    <!-- ── Left sidebar: filters + count + pipeline ──────────────────────── -->
+    <!-- ── Left sidebar: filters + root cards + pipeline ─────────────────── -->
     <aside class="filter-bar" id="filter-bar" hidden>
 
       <div class="sidebar-header">
@@ -99,7 +99,13 @@
         </div>
       </div>
 
-      <!-- Pipeline info: Arabic translation + roots -->
+      <!-- Root word cards — shown after every search -->
+      <div class="sidebar-roots" id="sidebar-roots" hidden>
+        <div class="sidebar-label">Root Words</div>
+        <div class="root-cards-list" id="root-cards-list"></div>
+      </div>
+
+      <!-- Pipeline info: Arabic translation + extracted roots -->
       <div class="pipeline-info" id="pipeline-info" hidden></div>
 
     </aside>
@@ -115,6 +121,9 @@
 
       <!-- Results -->
       <main class="results-section" id="results-section" hidden>
+
+        <!-- Concept bridge: "You searched ___ → Quranic terms ___" -->
+        <div class="concept-bridge" id="concept-bridge" hidden></div>
 
         <!-- Search summary paragraph -->
         <div class="search-summary" id="search-summary" hidden></div>
@@ -142,6 +151,19 @@
 
   </div><!-- end .app-body -->
 
+  <!-- ── Root-word modal ──────────────────────────────────────────────────── -->
+  <div class="root-modal-overlay" id="root-modal-overlay" hidden>
+    <div class="root-modal" id="root-modal" role="dialog" aria-modal="true">
+      <div class="root-modal-header">
+        <div class="root-modal-title" id="root-modal-title"></div>
+        <button class="root-modal-close" id="root-modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="root-modal-body" id="root-modal-body">
+        <div class="root-modal-loading">Searching…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Footer ───────────────────────────────────────────────────────────── -->
   <footer class="footer">
     <p>Grounded in authentic Quranic datasets · Arabic root-word aware · Three English translations per ayah</p>
@@ -152,8 +174,8 @@
     </p>
   </footer>
 
-  <script src="js/concepts.js?v=19"></script>
-  <script src="js/search.js?v=19"></script>
-  <script src="js/app.js?v=19"></script>
+  <script src="js/concepts.js?v=20"></script>
+  <script src="js/search.js?v=20"></script>
+  <script src="js/app.js?v=20"></script>
 </body>
 </html>
