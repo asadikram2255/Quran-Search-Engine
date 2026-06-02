@@ -120,21 +120,42 @@ class QuranSearch {
     };
 
     // ── Step 1: Translate to Arabic ───────────────────────────────────────
+    // Strategy: try English→Arabic first. If no roots come back (word is
+    // Urdu/Persian/etc. that the English translator doesn't know), fall back
+    // to Urdu→Arabic. This handles any non-English Islamic term dynamically —
+    // sifarish, muhabbat, musibat, zindagi — without hardcoding anything.
     onProgress?.('translate');
     let arabicQuery = '';
     let translationRoots = [];
     try {
-      // Send only the meaningful content words, not the full question string.
-      // "what are the verses about mercy and forgiveness?" → "mercy forgiveness"
-      // This gives the translation API a cleaner signal and reduces noisy roots.
+      // Send content keywords rather than the full question string.
       const contentWords = parsed.keywords.filter(k => k.length > 3).slice(0, 6);
       const translationInput = contentWords.length >= 2
         ? contentWords.join(' ')
         : rawQuery.trim();
-      arabicQuery = await this._translateToArabic(translationInput);
+
+      // Pass 1 — English → Arabic
+      arabicQuery = await this._translateToArabic(translationInput, 'en|ar');
       if (arabicQuery) {
-        onProgress?.('roots');
         translationRoots = this._extractRootsFromArabic(arabicQuery);
+      }
+
+      // Pass 2 — Urdu → Arabic (fallback when English translation yielded no roots)
+      // Covers native Urdu/Persian terms that MyMemory's en|ar pair doesn't recognise.
+      if (!translationRoots.length) {
+        onProgress?.('roots');
+        const urduArabic = await this._translateToArabic(rawQuery.trim(), 'ur|ar');
+        if (urduArabic) {
+          const urduRoots = this._extractRootsFromArabic(urduArabic);
+          if (urduRoots.length) {
+            arabicQuery       = urduArabic;   // show the better translation in the UI
+            translationRoots  = urduRoots;
+          }
+        }
+      }
+
+      if (translationRoots.length) {
+        onProgress?.('roots');
         for (const root of translationRoots) {
           const ids = this.rootIdx[root];
           if (ids) {
@@ -297,22 +318,22 @@ class QuranSearch {
 
   // ── Translation API ───────────────────────────────────────────────────────
 
-  async _translateToArabic(query) {
-    const key = 'qt_' + query.trim().toLowerCase();
+  // langpair: 'en|ar' (default) or 'ur|ar' for Urdu input
+  async _translateToArabic(query, langpair = 'en|ar') {
+    const key = `qt_${langpair}_${query.trim().toLowerCase()}`;
     if (this._cache[key] !== undefined) return this._cache[key];
     try {
       const stored = sessionStorage.getItem(key);
       if (stored !== null) { this._cache[key] = stored; return stored; }
     } catch (_) {}
 
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(query)}&langpair=en|ar`;
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(query)}&langpair=${langpair}`;
     const res = await Promise.race([
       fetch(url).then(r => r.json()),
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
     ]);
 
     const text = res?.responseData?.translatedText || '';
-    // Accept only if it contains Arabic characters
     const result = /[؀-ۿ]/.test(text) ? text : '';
     this._cache[key] = result;
     try { if (result) sessionStorage.setItem(key, result); } catch (_) {}
