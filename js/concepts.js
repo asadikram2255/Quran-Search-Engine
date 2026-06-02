@@ -256,6 +256,9 @@ const EXACT_WORDS = {
   'taqwa':        ['التقوي', 'تقواه', 'تقوي'],
   'muamalat':     ['المعاملات', 'تعاملون'],
   'dua':          ['دعاء', 'الدعاء', 'ادعو', 'يدعون'],
+  'waseela':      ['الوسيله', 'وسيله', 'الوسيلة', 'وسيلة'],
+  'sabeel':       ['السبيل', 'سبيل', 'سبيلنا', 'سبيله', 'سبيلهم'],
+  'sabeelillah':  ['سبيل الله', 'في سبيل الله'],
   'zakat':        ['الزكاه', 'زكاه', 'الزكاه'],
   'salah':        ['الصلاه', 'صلاه', 'الصلوه'],
   'jannah':       ['الجنه', 'جنه', 'جنات'],
@@ -615,6 +618,18 @@ const TRANSLITERATIONS = {
   'fasiqoon':     { english: ['transgressors','disobedient'], roots: ['ف س ق'] },
   'zalimoon':     { english: ['wrongdoers','oppressors'], roots: ['ظ ل م'] },
 
+  // ── Means / access / path concepts ──────────────────────────────────────
+  // These were missing entirely and caused dangerous fuzzy-match collisions
+  'waseela':    { english: ['means','medium','intercession','access','draw near to allah','seek nearness'], roots: ['و س ل'] },
+  'waseelah':   { english: ['means','medium','intercession','way to seek closeness'], roots: ['و س ل'] },
+  'wasila':     { english: ['means','access','nearness to allah'], roots: ['و س ل'] },
+  'wasilah':    { english: ['means','medium','draw near'], roots: ['و س ل'] },
+  'sabeel':     { english: ['path','way','road','sake of allah','fi sabilillah'], roots: ['س ب ل'] },
+  'sabeelillah':{ english: ['path of allah','way of allah','cause of allah'], roots: ['س ب ل'] },
+  'fi sabilillah': { english: ['in the way of allah','for allah sake','cause of allah'], roots: ['س ب ل'] },
+  'manhaj':     { english: ['methodology','clear way','program'], roots: ['ن ه ج'] },
+  'minhaj':     { english: ['clear path','methodology'], roots: ['ن ه ج'] },
+  'suluk':      { english: ['conduct','behaviour','path','way of life'], roots: ['س ل ك'] },
   // ── Specific Quranic concepts ─────────────────────────────────────────────
   'amthal':       { english: ['parables','analogies','similitudes'], roots: ['م ث ل'] },
   'parable':      { english: ['analogy','similitude','example'], roots: ['م ث ل'] },
@@ -2179,6 +2194,27 @@ function _editDistance(a, b, maxDist) {
   return prev[n];
 }
 
+/**
+ * Extract the consonant skeleton of a transliterated word by removing all
+ * pure vowels (a e i o u).  w and y are kept because in Arabic transliteration
+ * they almost always represent actual consonants (و / ي).
+ *
+ * This is the linguistic gate for fuzzy matching: two words with different
+ * consonant skeletons come from different Arabic roots and must NEVER be
+ * treated as spelling variants of each other, no matter how similar they look.
+ *
+ * Examples:
+ *   wasila  → wsl    (و س ل  — waseela, means/intercession)
+ *   wasiya  → wsy    (و ص ي  — wasiyyah, will/bequest)  ← different root: BLOCKED
+ *   tawakul → twkl   (تَوَكُّل — tawakkul)
+ *   tawakal → twkl   ← same root: ALLOWED ✓
+ *   rahma   → rhm    (ر ح م)
+ *   rahmah  → rhm    ← same root: ALLOWED ✓
+ */
+function _consonants(s) {
+  return s.replace(/[aeiou]/g, '');
+}
+
 // Build canonical-form → TRANSLITERATIONS entry at parse time (runs once).
 // When multiple keys share the same canonical form the first one wins —
 // which is always the "primary" spelling since TRANSLITERATIONS is
@@ -2196,7 +2232,12 @@ const _TRANSLIT_CANON = (() => {
  * Look up a single query word against TRANSLITERATIONS using three passes:
  *   1. Exact key match
  *   2. Canonical-form match  (handles long-vowel / doubled-consonant variants)
- *   3. Fuzzy match on canonical forms, edit distance ≤ 1 (len 5-7) or ≤ 2 (len 8+)
+ *   3. Root-safe fuzzy match — Levenshtein ≤ 1 (len 5-7) or ≤ 2 (len 8+),
+ *      GATED by consonant-skeleton identity to prevent cross-root false positives.
+ *
+ *      The consonant gate is the critical fix: it ensures that words like
+ *      "waseela" (root و س ل → skeleton wsl) never match "wasiyyah"
+ *      (root و ص ي → skeleton wsy), even though they are edit-distance 1 apart.
  *
  * Returns { entry, key, confidence } where confidence is 'exact'|'canonical'|'fuzzy',
  * or null if no match.
@@ -2207,23 +2248,29 @@ function _lookupTranslit(word) {
   // Pass 1 — exact
   if (TRANSLITERATIONS[word]) return { entry: TRANSLITERATIONS[word], key: word, confidence: 'exact' };
 
-  // Pass 2 — canonical form
+  // Pass 2 — canonical form (collapses aa→a, ee→i, doubled consonants, -ah endings)
   const canon = _normTranslit(word);
   if (_TRANSLIT_CANON[canon]) {
-    // Find the original key that produced this canonical form
     const origKey = Object.keys(TRANSLITERATIONS).find(k => _normTranslit(k) === canon) || word;
     return { entry: _TRANSLIT_CANON[canon], key: origKey, confidence: 'canonical' };
   }
 
-  // Pass 3 — fuzzy (only for words long enough to avoid false positives)
+  // Pass 3 — root-safe fuzzy match
+  // Only runs for words long enough that a 1-char difference is meaningful.
+  // GATE: candidate must share the same consonant skeleton as the query — this
+  // ensures we only match within the same Arabic root family.
   if (word.length < 5) return null;
-  const maxDist = word.length >= 8 ? 2 : 1;
+  const maxDist       = word.length >= 8 ? 2 : 1;
+  const queryConsonants = _consonants(canon);
+
   let best = null, bestKey = null, bestDist = maxDist + 1;
   for (const [normKey, val] of Object.entries(_TRANSLIT_CANON)) {
+    // ── Consonant-skeleton gate ───────────────────────────────────────────
+    // If the consonant skeletons differ this is a different Arabic root — skip.
+    if (_consonants(normKey) !== queryConsonants) continue;
+    // ─────────────────────────────────────────────────────────────────────
     const d = _editDistance(canon, normKey, maxDist);
-    if (d < bestDist) {
-      bestDist = d; best = val; bestKey = normKey;
-    }
+    if (d < bestDist) { bestDist = d; best = val; bestKey = normKey; }
   }
   if (!best) return null;
   const origKey = Object.keys(TRANSLITERATIONS).find(k => _normTranslit(k) === bestKey) || bestKey;
