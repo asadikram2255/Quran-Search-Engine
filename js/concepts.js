@@ -620,10 +620,10 @@ const TRANSLITERATIONS = {
 
   // ── Means / access / path concepts ──────────────────────────────────────
   // These were missing entirely and caused dangerous fuzzy-match collisions
-  'waseela':    { english: ['means','medium','intercession','access','draw near to allah','seek nearness'], roots: ['و س ل'] },
-  'waseelah':   { english: ['means','medium','intercession','way to seek closeness'], roots: ['و س ل'] },
-  'wasila':     { english: ['means','access','nearness to allah'], roots: ['و س ل'] },
-  'wasilah':    { english: ['means','medium','draw near'], roots: ['و س ل'] },
+  'waseela':    { english: ['waseela','intercession','seeking nearness to allah','draw close to allah'], roots: ['و س ل'] },
+  'waseelah':   { english: ['waseelah','intercession','nearness to allah'], roots: ['و س ل'] },
+  'wasila':     { english: ['wasila','intercession','nearness'], roots: ['و س ل'] },
+  'wasilah':    { english: ['wasilah','draw near to allah'], roots: ['و س ل'] },
   'sabeel':     { english: ['path','way','road','sake of allah','fi sabilillah'], roots: ['س ب ل'] },
   'sabeelillah':{ english: ['path of allah','way of allah','cause of allah'], roots: ['س ب ل'] },
   'fi sabilillah': { english: ['in the way of allah','for allah sake','cause of allah'], roots: ['س ب ل'] },
@@ -2377,9 +2377,28 @@ function parseQuery(rawQuery) {
   const _addConcept = (key, expansion, confidence, source) => {
     if (_seenTranslitKeys.has(key)) return;
     _seenTranslitKeys.add(key);
-    for (const eng of expansion.english) {
-      if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
+
+    // ── Core rule: Arabic-precise vs English-fallback ──────────────────────
+    // When a term has specific Arabic word forms in EXACT_WORDS, those are
+    // used for precise Quranic word matching (+30 score in search.js Step 6).
+    // In that case, DO NOT also push English keywords into BM25 — doing so
+    // causes severe result inflation because common English words like "means",
+    // "medium", "access" appear in thousands of unrelated ayah translations.
+    //
+    // Example: 'waseela' has EXACT_WORDS → الوسيله, وسيله
+    //   Without this guard: 'means' hits 3,939 ayaat via BM25
+    //   With this guard:    only the 2 ayaat containing الوسيلة are found ✓
+    //
+    // English keywords are ONLY added when no exact Arabic form is known —
+    // they serve as a fallback to catch thematic context the Arabic lookup
+    // would miss.
+    const hasExactArabicForms = !!(EXACT_WORDS[key] && EXACT_WORDS[key].length > 0);
+    if (!hasExactArabicForms) {
+      for (const eng of expansion.english) {
+        if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
+      }
     }
+
     for (const root of expansion.roots) {
       if (!matched.roots.includes(root)) matched.roots.push(root);
     }
