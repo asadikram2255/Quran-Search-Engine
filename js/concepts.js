@@ -182,7 +182,6 @@ const EXACT_WORDS = {
 
   // ── Quranic commands ────────────────────────────────────────────────────
   'qul':          ['قل'],
-  'say':          ['قل'],
 
   // ── Groups / categories of people ───────────────────────────────────────
   'muttaqoon':    ['المتقين', 'المتقون', 'متقين', 'متقون'],
@@ -271,8 +270,12 @@ const EXACT_WORDS = {
   'la yuhibb':    ['لا يحب'],
   'la yuhibbu':   ['لا يحب'],
   'yuhibbu':      ['يحب'],
-  'loves':        ['يحب', 'يحبون'],
+  'love':         ['يحب', 'يحبون', 'يحبهم', 'حب', 'احب'],
+  'loves':        ['يحب', 'يحبون', 'يحبهم'],
   'does not love': ['لا يحب'],
+  'not love':     ['لا يحب'],
+  'allah love':   ['يحب'],
+  'allah loves':  ['يحب'],
 
   // ── Rabbana / Rabbi supplications ────────────────────────────────────────
   'rabbana':      ['ربنا'],
