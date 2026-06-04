@@ -154,7 +154,12 @@ class QuranSearch {
         }
       }
 
-      if (translationRoots.length) {
+      // Only use translation-derived roots when the concept layer (TRANSLITERATIONS,
+      // EXACT_WORDS, CONCEPT_EXPANSIONS) found NO roots. When concept roots exist,
+      // they're more precise — the translation API often misinterprets Islamic terms
+      // (e.g. translating "ikhlaas" as "سورة الإخلاص" instead of the concept).
+      const conceptRootsExist = parsed.roots.length > 0 || (parsed.exactWords || []).length > 0;
+      if (translationRoots.length && !conceptRootsExist) {
         onProgress?.('roots');
         for (const root of translationRoots) {
           const ids = this.rootIdx[root];
@@ -162,6 +167,11 @@ class QuranSearch {
             for (const id of ids) addScore(id, 4, 'roots', root);
           }
         }
+      } else if (conceptRootsExist) {
+        // Concept layer handled it — clear translation data so it doesn't
+        // show misleading info in the pipeline strip
+        arabicQuery      = '';
+        translationRoots = [];
       }
     } catch (_) { /* translation failed — continue with English-only */ }
 
