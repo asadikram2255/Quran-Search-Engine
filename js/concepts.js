@@ -2461,8 +2461,14 @@ function parseQuery(rawQuery) {
     // English keywords are ONLY added when no exact Arabic form is known —
     // they serve as a fallback to catch thematic context the Arabic lookup
     // would miss.
-    const hasExactArabicForms = !!(EXACT_WORDS[key] && EXACT_WORDS[key].length > 0);
-    if (!hasExactArabicForms) {
+    // Suppress English BM25 keywords when we have Arabic-level precision:
+    // either explicit word forms (EXACT_WORDS) or Arabic roots.
+    // English keywords are ONLY a fallback for entries with zero Arabic signal.
+    const hasArabicPrecision = !!(
+      (EXACT_WORDS[key] && EXACT_WORDS[key].length > 0) ||
+      (expansion.roots && expansion.roots.length > 0)
+    );
+    if (!hasArabicPrecision) {
       for (const eng of expansion.english) {
         if (!matched.keywords.includes(eng)) matched.keywords.push(eng);
       }
