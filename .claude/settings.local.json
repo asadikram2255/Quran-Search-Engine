@@ -16,7 +16,9 @@
       "Skill(update-config:*)",
       "Bash(git update-index *)",
       "Bash(git config *)",
-      "Bash(echo \"hooksPath = $\\(git config core.hooksPath\\)\")"
+      "Bash(echo \"hooksPath = $\\(git config core.hooksPath\\)\")",
+      "Bash(git pull *)",
+      "Bash(git stash *)"
     ]
   }
 }
